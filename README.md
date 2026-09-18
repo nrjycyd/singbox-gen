@@ -58,6 +58,9 @@ docker compose restart
    > 若怀疑解析错位，把 volume 改成绝对路径 `- /<绝对路径>/data:/data`。
 4. 浏览器打开 `http://<部署机IP>:8090`，右上角输入 `secret.ui_token` 即可使用
 
+   > **鉴权模型**：`secret.ui_token` **留空 = 内网免鉴权**（示例配置默认如此，UI 会自动隐藏 token 输入框）；
+   > 填入任意字符串则 `/api/*` 与下载接口需 `X-Token`。手机订阅 URL 由 `secret.profile_token` 独立保护。
+
 ## 手机订阅
 
 SFA/SFI 添加远程配置（改完 YAML 保存后，手机端刷新即生效，服务端每次请求实时渲染）：

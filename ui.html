@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <title>singbox-gen — sing-box 配置生成器</title>
 <style>
-:root{--bg:#14161a;--panel:#1d2026;--fg:#d8dee9;--mut:#7a828e;--acc:#4aa3df;--err:#e06c75;--ok:#98c379}
+:root{--bg:#14161a;--panel:#1d2026;--fg:#d8dee9;--mut:#7a828e;--acc:#4aa3df;--err:#e06c75;--ok:#98c379;--warn:#e5c07b}
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;height:100vh}
 header{padding:10px 16px;background:var(--panel);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 header b{font-size:15px}
-input[type=password]{width:120px;background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:5px 8px}
+input[type=password]{width:150px;background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:5px 8px}
+input.bad{border-color:var(--err)}
 button{background:var(--acc);color:#0b0d10;border:0;border-radius:4px;padding:6px 14px;font:inherit;cursor:pointer}
 button.alt{background:#2c313a;color:var(--fg)}
+#status.err{color:var(--err)}#status.ok{color:var(--ok)}#status.warn{color:var(--warn)}#status{font-size:13px}
 main{flex:1;display:flex;min-height:0}
 .pane{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid #262a31}
 .pane:last-child{border-right:0}
@@ -21,20 +23,19 @@ textarea{flex:1;background:#12141a;color:var(--fg);border:0;padding:12px;font:in
 #files div.sel,#files div:hover{color:var(--acc);background:#1d2026}
 #content{flex:1;overflow:auto;padding:12px;margin:0;white-space:pre-wrap;word-break:break-all;font-size:13px}
 #log{height:140px;overflow:auto;background:#101216;border-top:1px solid #262a31;padding:8px 16px;font-size:13px;white-space:pre-wrap;color:var(--mut)}
-.ok{color:var(--ok)}.err{color:var(--err)}
-a.sub{color:var(--acc);word-break:break-all}
+.ok{color:var(--ok)}.err{color:var(--err)}.warn{color:var(--warn)}
 </style>
 </head>
 <body>
 <header>
   <b>singbox-gen</b>
-  <input id="token" type="password" placeholder="UI token">
+  <input id="token" type="password" placeholder="UI token（回车/输入即连接）">
   <button onclick="saveCfg()">保存</button>
   <button onclick="preview()">生成预览</button>
   <button class="alt" onclick="dl('gateway')">下载 网关 zip</button>
   <button class="alt" onclick="dl('phone')">下载 手机 zip</button>
   <button class="alt" onclick="push()">推送到网关(check 门禁)</button>
-  <span id="status"></span>
+  <span id="status">未连接</span>
 </header>
 <div id="banner" style="display:none;background:#5a3a12;color:#ffd9a0;padding:6px 16px;font-size:13px">
   当前使用<strong>自动生成的示例配置</strong>（节点为占位值，仅用于验证渲染与 UI）。
@@ -46,7 +47,7 @@ a.sub{color:var(--acc);word-break:break-all}
     <textarea id="yaml" spellcheck="false"></textarea>
   </section>
   <section class="pane" style="flex:6">
-    <h3>产物预览　<span id="suburl"></span></h3>
+    <h3>产物预览</h3>
     <div style="display:flex;flex:1;min-height:0">
       <div id="files"></div>
       <pre id="content"></pre>
@@ -57,39 +58,79 @@ a.sub{color:var(--acc);word-break:break-all}
 <script>
 const $=s=>document.querySelector(s);
 let files={};
+let noAuth=false;
 function tok(){return $('#token').value.trim()}
-function log(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent=t;$('#log').append(d);$('#log').scrollTop=1e9}
-function st(t){$('#status').textContent=t}
+function setStatus(t,cls){const e=$('#status');e.textContent=t||'';e.className=cls||''}
+function log(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent='['+new Date().toLocaleTimeString()+'] '+t;$('#log').append(d);$('#log').scrollTop=1e9}
+function noTok(){if(noAuth||tok())return false;setStatus('请先填写 UI token','warn');$('#token').classList.add('bad');$('#token').focus();log('未填写 token：见部署目录 data/homelab.yaml 的 secret.ui_token（留空则免鉴权）','warn');return true}
+async function api(path,opts){
+  opts=opts||{};opts.headers=Object.assign({'X-Token':tok()},opts.headers||{});
+  const r=await fetch(path,opts);
+  if(r.status===401){setStatus('token 不正确','err');$('#token').classList.add('bad');throw new Error('token 不正确（data/homelab.yaml → secret.ui_token；留空可关闭鉴权）')}
+  return r;
+}
 async function loadCfg(){
-  const r=await fetch('/api/config',{headers:{'X-Token':tok()}});
-  if(r.status==401){log('token 不正确，输入后回车重试','err');return}
-  $('#yaml').value=await r.text()
+  if(noTok())return;
+  try{
+    const r=await api('/api/config');
+    $('#yaml').value=await r.text();
+    $('#token').classList.remove('bad');
+    setStatus('已连接','ok');
+    log('已加载配置（来自 /data/homelab.yaml）','ok');
+  }catch(e){log(e.message||String(e),'err')}
 }
 async function saveCfg(){
-  const r=await fetch('/api/config',{method:'POST',headers:{'X-Token':tok()},body:$('#yaml').value});
-  const j=await r.json().catch(()=>({}))
-  if(r.ok){st('已保存');log('保存成功','ok')}else{st('');log('保存失败: '+(j.error||r.status),'err')}
+  if(noTok())return;
+  try{
+    const r=await api('/api/config',{method:'POST',body:$('#yaml').value});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok){setStatus('已保存','ok');log('保存成功（写入 /data/homelab.yaml）','ok')}
+    else{setStatus('保存失败','err');log('保存失败: '+(j.error||r.status),'err')}
+  }catch(e){log(e.message||String(e),'err')}
 }
 async function preview(){
-  const r=await fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json','X-Token':tok()},body:JSON.stringify({yaml:$('#yaml').value})});
-  const j=await r.json();
-  if(!r.ok){log('生成失败: '+(j.error||r.status),'err');return}
-  files={};
-  for(const [g,m] of Object.entries(j)){for(const [n,c] of Object.entries(m)){files[g+'/'+n]=c}}
-  const box=$('#files');box.innerHTML='';
-  Object.keys(files).sort().forEach(n=>{const d=document.createElement('div');d.textContent=n;d.onclick=()=>{box.querySelector('.sel')?.classList.remove('sel');d.classList.add('sel');$('#content').textContent=files[n]};box.append(d)});
-  st('预览 OK，共 '+Object.keys(files).length+' 个文件');log('预览生成成功','ok')
+  if(noTok())return;
+  setStatus('生成中…','warn');
+  try{
+    const r=await api('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({yaml:$('#yaml').value})});
+    const j=await r.json();
+    if(!r.ok){setStatus('生成失败','err');log('生成失败: '+(j.error||r.status),'err');return}
+    files={};
+    for(const [g,m] of Object.entries(j)){for(const [n,c] of Object.entries(m)){files[g+'/'+n]=c}}
+    const box=$('#files');box.innerHTML='';
+    Object.keys(files).sort().forEach(n=>{const d=document.createElement('div');d.textContent=n;d.onclick=()=>{const s=box.querySelector('.sel');if(s)s.classList.remove('sel');d.classList.add('sel');$('#content').textContent=files[n]};box.append(d)});
+    const first=box.firstChild;if(first)first.click();
+    setStatus('预览 OK（'+Object.keys(files).length+' 个文件）','ok');log('预览生成成功','ok');
+  }catch(e){setStatus('生成失败','err');log(e.message||String(e),'err')}
 }
-function dl(which){location.href='/download/'+which+'?token='+encodeURIComponent(tok())}
+function dl(which){
+  if(noTok())return;
+  log('开始下载 '+which+' …');
+  location.href='/download/'+which+'?token='+encodeURIComponent(tok());
+}
 async function push(){
+  if(noTok())return;
   if(!confirm('推送到网关（备份→check→应用→重启，失败自动回滚）？'))return;
-  st('推送中…');
-  const r=await fetch('/api/push',{method:'POST',headers:{'X-Token':tok()}});
-  const txt=await r.text();log(txt,txt.includes('完成')?'ok':'err');st('')
+  setStatus('推送中…','warn');log('开始推送…');
+  try{
+    const r=await api('/api/push',{method:'POST'});
+    const txt=await r.text();
+    txt.split('\n').forEach(l=>{if(l.trim())log(l)});
+    setStatus(txt.includes('完成')?'推送完成':'推送结束（见日志）',txt.includes('完成')?'ok':'err');
+  }catch(e){setStatus('推送失败','err');log(e.message||String(e),'err')}
 }
 $('#token').value=localStorage.getItem('singbox-gen_token')||'';
-$('#token').addEventListener('input',()=>localStorage.setItem('singbox-gen_token',tok()));
-fetch('/api/status').then(r=>r.json()).then(j=>{if(j.sample)$('#banner').style.display='block'}).catch(()=>{});
+let t=null;
+$('#token').addEventListener('input',()=>{
+  localStorage.setItem('singbox-gen_token',tok());
+  $('#token').classList.remove('bad');
+  clearTimeout(t);t=setTimeout(()=>{if(tok())loadCfg()},600);
+});
+$('#token').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(t);loadCfg()}});
+fetch('/api/status').then(r=>r.json()).then(j=>{
+  if(j.sample)$('#banner').style.display='block';
+  if(j.auth===false){noAuth=true;$('#token').style.display='none';setStatus('内网免鉴权','ok');loadCfg()}
+}).catch(()=>{});
 loadCfg();
 </script>
 </body>

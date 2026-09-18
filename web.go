@@ -20,12 +20,22 @@ type Server struct {
 
 func (s *Server) loadCfg() (*Config, error) { return LoadConfig(s.dataDir + "/homelab.yaml") }
 
-func (s *Server) tokOK(r *http.Request) bool {
+// authOK: secret.ui_token 为空 = 内网免鉴权；非空则要求 X-Token 匹配
+func (s *Server) authOK(r *http.Request) bool {
 	c, err := s.loadCfg()
 	if err != nil {
 		return false
 	}
-	return r.Header.Get("X-Token") == c.Secret.UIToken && c.Secret.UIToken != ""
+	if c.Secret.UIToken == "" {
+		return true
+	}
+	return r.Header.Get("X-Token") == c.Secret.UIToken
+}
+
+// needAuth: 查询当前是否启用了鉴权
+func (s *Server) needAuth() bool {
+	c, err := s.loadCfg()
+	return err == nil && c.Secret.UIToken != ""
 }
 
 func jsonOut(w http.ResponseWriter, v any) {
@@ -41,8 +51,8 @@ func errOut(w http.ResponseWriter, code int, msg string) {
 
 func (s *Server) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/status" && !s.tokOK(r) {
-			errOut(w, 401, "token 缺失或不正确")
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/status" && !s.authOK(r) {
+			errOut(w, 401, "token 缺失或不正确（留空 secret.ui_token 可关闭鉴权）")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -64,6 +74,7 @@ func (s *Server) HandleRoutes(mux *http.ServeMux) {
 		}
 		b, _ := uiFS.ReadFile("ui.html")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
 		w.Write(b)
 	})
 }
@@ -97,7 +108,7 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
-	jsonOut(w, map[string]any{"sample": IsSampleConfig(s.dataDir)})
+	jsonOut(w, map[string]any{"sample": IsSampleConfig(s.dataDir), "auth": s.needAuth()})
 }
 
 func renderAll(c *Config, dataDir string) (gw map[string]string, phoneFull, phoneNoCmt string, err error) {
@@ -200,7 +211,7 @@ func (s *Server) dlGateway(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if r.URL.Query().Get("token") != c.Secret.UIToken {
+	if c.Secret.UIToken != "" && r.URL.Query().Get("token") != c.Secret.UIToken {
 		http.Error(w, "forbidden", 403)
 		return
 	}
@@ -224,7 +235,7 @@ func (s *Server) dlPhone(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if r.URL.Query().Get("token") != c.Secret.UIToken {
+	if c.Secret.UIToken != "" && r.URL.Query().Get("token") != c.Secret.UIToken {
 		http.Error(w, "forbidden", 403)
 		return
 	}

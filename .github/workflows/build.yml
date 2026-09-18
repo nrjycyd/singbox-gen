@@ -34,7 +34,7 @@ jobs:
           curl -fsS http://127.0.0.1:18090/p/demo-profile/mobile.json -o /tmp/mobile.json
           head -c 160 /tmp/mobile.json; echo
           # 网关端同样走渲染 + 校验（含 pinned 块）
-          curl -fsS "http://127.0.0.1:18090/download/gateway?token=demo-ui" -o /tmp/gw.zip
+          curl -fsS "http://127.0.0.1:18090/download/gateway" -o /tmp/gw.zip
           test -s /tmp/gw.zip && echo "gateway render OK ($(stat -c%s /tmp/gw.zip) bytes)"
           curl -fsS http://127.0.0.1:18090/api/status
           curl -fsS http://127.0.0.1:18090/ >/dev/null && echo "bootstrap + render OK"
