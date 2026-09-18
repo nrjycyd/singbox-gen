@@ -440,6 +440,16 @@ func LoadConfig2(text string) (*Config, error) {
 			return nil, fmt.Errorf("module_order 含未知模块 %q", m)
 		}
 	}
+	for i, r := range c.DnsRules {
+		if err := validateRule(r, "dns_rules", i); err != nil {
+			return nil, err
+		}
+	}
+	for i, r := range c.RouteRules {
+		if err := validateRule(r, "route_rules", i); err != nil {
+			return nil, err
+		}
+	}
 	if err := c.validateSFL(); err != nil {
 		return nil, err
 	}
@@ -462,6 +472,59 @@ func (c *Config) EnabledModes() []string {
 			out = append(out, m)
 		}
 	}
+	return out
+}
+
+// validateRule：规则元键合法性（_scope/_if/_for_each）
+func validateRule(r Rule, where string, i int) error {
+	if v, ok := r["_scope"]; ok {
+		sc, _ := v.(string)
+		switch sc {
+		case "", "both", TgtSFL, TgtSFA, TgtSFI, TgtMobile:
+		default:
+			return fmt.Errorf("%s[%d]._scope=%q 非法（可用: both/SFL/SFA/SFI/mobile）", where, i+1, sc)
+		}
+	}
+	if v, ok := r["_if"]; ok {
+		f, _ := v.(string)
+		if f != "" && !knownFlags[f] {
+			return fmt.Errorf("%s[%d]._if=%q 非法（可用: pinned/cn_extra/clash/fakeip/telegram/gh）", where, i+1, f)
+		}
+	}
+	if v, ok := r["_for_each"]; ok {
+		fe, _ := v.(string)
+		if fe != "" && fe != "pinned_sets" {
+			return fmt.Errorf("%s[%d]._for_each=%q 非法（目前仅支持 pinned_sets）", where, i+1, fe)
+		}
+	}
+	return nil
+}
+
+// RuleWarnings：提示"在任何目标端都不会生效"的规则
+func (c *Config) RuleWarnings() []string {
+	var out []string
+	check := func(rules []Rule, where string) {
+		for i, r := range rules {
+			hit := false
+			for _, t := range AllTargets {
+				sc, _ := r["_scope"].(string)
+				if !ScopeMatch(sc, t) {
+					continue
+				}
+				if f, _ := r["_if"].(string); f != "" && !c.flagOf(f, t) {
+					continue
+				}
+				hit = true
+				break
+			}
+			if !hit {
+				note, _ := r["_note"].(string)
+				out = append(out, fmt.Sprintf("%s[%d] 在任何目标端都不生效（_scope/_if 组合）：%s", where, i+1, note))
+			}
+		}
+	}
+	check(c.DnsRules, "dns_rules")
+	check(c.RouteRules, "route_rules")
 	return out
 }
 

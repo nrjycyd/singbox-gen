@@ -70,6 +70,24 @@
     return rows;
   }
 
+  // normalizeArrays：把两侧数组重排为界面行顺序（步骤分组顺序），保证产物顺序与界面一致
+  function normalizeArrays() {
+    const rows = buildRows();
+    reorder(rows);
+    return rows;
+  }
+
+  // arraysAligned：当前数组顺序是否已与行顺序一致
+  function arraysAligned() {
+    const beforeD = doc.dns_rules.map((r, i) => i).join(',');
+    const d0 = doc.dns_rules.slice(), r0 = doc.route_rules.slice();
+    reorder(buildRows());
+    const sameD = doc.dns_rules.every((v, i) => v === d0[i]);
+    const sameR = doc.route_rules.every((v, i) => v === r0[i]);
+    doc.dns_rules = d0; doc.route_rules = r0;   // 还原（只用于检测）
+    return sameD && sameR;
+  }
+
   function reorder(rows) {
     const d = [], r = [];
     rows.forEach((row) => { row.dns.forEach((i) => d.push(doc.dns_rules[i])); row.route.forEach((i) => r.push(doc.route_rules[i])); });
@@ -81,6 +99,14 @@
   function render() {
     const root = $('#rulesRoot');
     root.innerHTML = '';
+    if (!window.__skipAlignHint && !arraysAligned()) {
+      const w = el('div', 'rcard');
+      const t = el('h4', '', '⚠ 检测到规则数组顺序与"步骤分组"不一致：产物按数组顺序输出（_group 只是界面配对标签）');
+      const b = el('button', 'mini', '按步骤重排（会改写数组顺序 = 优先级）');
+      b.onclick = () => { normalizeArrays(); window.sgenLog('已按步骤重排数组顺序，记得保存', 'ok'); render(); };
+      w.append(t, b);
+      root.append(w);
+    }
     root.append(renderRuleSets());
     const board = el('div', 'board');
     board.append(renderBoard());
@@ -189,8 +215,8 @@
       chip.append(label);
       const up = el('span', 'x', '↑'); up.onclick = (e) => { e.stopPropagation(); swapInGroup(arr, idx, -1, side); };
       const dn = el('span', 'x', '↓'); dn.onclick = (e) => { e.stopPropagation(); swapInGroup(arr, idx, +1, side); };
-      const del = el('span', 'x', '×'); del.onclick = (e) => { e.stopPropagation(); if (confirm('删除该规则？')) { arr.splice(idx, 1); open = null; render(); } };
-      const cp = el('span', 'x', '⧉'); cp.onclick = (e) => { e.stopPropagation(); arr.splice(idx + 1, 0, JSON.parse(JSON.stringify(rule))); render(); };
+      const del = el('span', 'x', '×'); del.onclick = (e) => { e.stopPropagation(); if (confirm('删除该规则？')) { arr.splice(idx, 1); open = null; normalizeArrays(); render(); } };
+      const cp = el('span', 'x', '⧉'); cp.onclick = (e) => { e.stopPropagation(); arr.splice(idx + 1, 0, JSON.parse(JSON.stringify(rule))); normalizeArrays(); render(); };
       chip.append(up, dn, cp, del);
       cell.append(chip);
     });
@@ -274,7 +300,7 @@
       try {
         const v = advDirty ? JSON.parse(adv.value) : build();
         if (typeof v !== 'object' || Array.isArray(v)) throw new Error('必须是对象');
-        arrOf(side)[index] = v; open = null; render(); window.sgenLog('规则已更新（记得保存）', 'ok');
+        arrOf(side)[index] = v; open = null; normalizeArrays(); render(); window.sgenLog('规则已更新（记得保存）', 'ok');
       } catch (e) { alert('规则无效: ' + e.message); }
     };
     const cancel = el('button', 'mini', '取消');
@@ -292,10 +318,12 @@
     }
     if (side === 'dns_rules') r.server = '{{proxy_dns}}';
     else r.outbound = 'direct';
-    const arr = arrOf(side);
-    arr.push(r);
-    open = { side, index: arr.length - 1 };
-    render();
+    arrOf(side).push(r);
+    const rows = normalizeArrays();          // 关键：新增后按步骤重排，避免落到数组末尾
+    let idx = -1;
+    (side === 'dns_rules' ? doc.dns_rules : doc.route_rules).forEach((x, i) => { if (x === r) idx = i });
+    open = { side, index: idx };
+    render(); void rows;
   }
 
   function genPair(rs) {
@@ -307,6 +335,7 @@
     const d = Object.assign({}, base, { rule_set: [tag], action: 'route', server: '{{proxy_dns}}' });
     const r = Object.assign({}, base, { rule_set: [tag], action: 'route', outbound: 'select' });
     doc.dns_rules.push(d); doc.route_rules.push(r);
+    normalizeArrays();
     render();
     window.sgenLog('已生成规则对：' + tag + '（DNS + Route，记得保存）', 'ok');
   }

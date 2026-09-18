@@ -144,7 +144,7 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
 			errOut(w, 400, "产物校验失败: "+err.Error())
 			return
 		}
-		jsonOut(w, map[string]any{"label": "SFL/" + mode, "files": files})
+		jsonOut(w, map[string]any{"label": "SFL/" + mode, "files": files, "warnings": c.RuleWarnings()})
 	case TgtSFA, TgtSFI:
 		target := r.URL.Query().Get("target")
 		p, err := RenderPhone(c, target, s.dataDir)
@@ -157,7 +157,7 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
 			errOut(w, 400, "产物校验失败: "+err.Error())
 			return
 		}
-		jsonOut(w, map[string]any{"label": target, "files": files})
+		jsonOut(w, map[string]any{"label": target, "files": files, "warnings": c.RuleWarnings()})
 	default:
 		errOut(w, 400, "target 需要 SFL / SFA / SFI")
 	}

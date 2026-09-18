@@ -154,6 +154,7 @@ async function loadTarget(t){
     state[t].files=j.files||{};
     renderGroups();
     if(curFile.t===t&&state[t].files[curFile.n])$('#content').textContent=state[t].files[curFile.n];
+    (j.warnings||[]).forEach(wmsg=>log('⚠ '+t+' '+wmsg,'warn'));
     setStatus('已加载 '+t+(t==='SFL'?'/'+state.SFL.mode:'')+'（'+Object.keys(state[t].files).length+' 个文件）','ok');
   }catch(e){setStatus(t+' 生成失败','err');log(t+' 失败: '+(e.message||e),'err')}
 }
