@@ -1,0 +1,76 @@
+name: build-and-publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  compile-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: tidy + vet + build
+        run: |
+          go mod tidy
+          go vet ./...
+          gofmt -l . | tee fmt.log; test ! -s fmt.log || echo "::warning::gofmt 存在未格式化文件"
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o singbox-gen .
+      - name: smoke render (产物必须通过内置校验)
+        run: |
+          mkdir -p /tmp/d/certs
+          cp data.example/homelab.yaml /tmp/d/homelab.yaml
+          # 证书属部署数据（不进仓库）：CI 临时生成自签证书供渲染冒烟
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -days 1 -nodes -keyout /tmp/k.pem -out /tmp/c.pem \
+            -subj "/CN=www.example.com" -addext "subjectAltName=DNS:www.example.com" >/dev/null 2>&1
+          for c in node-a node-b node-d node-e; do cp /tmp/c.pem /tmp/d/certs/$c.crt; done
+          ./singbox-gen -data /tmp/d -addr 127.0.0.1:18090 &
+          sleep 1
+          # /p 走完整渲染管线（dns/route 装配 + 解析 + 引用闭环），失败即非 200
+          curl -fsS http://127.0.0.1:18090/p/demo-profile/mobile.json -o /tmp/mobile.json
+          head -c 200 /tmp/mobile.json
+          # 网关端同样走渲染 + 校验（含 pinned 块）
+          curl -fsS "http://127.0.0.1:18090/download/gateway?token=demo-ui" -o /tmp/gw.zip
+          test -s /tmp/gw.zip && echo "gateway render OK ($(stat -c%s /tmp/gw.zip) bytes)"
+          curl -fsS http://127.0.0.1:18090/ >/dev/null && echo "server + render OK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: singbox-gen-linux
+          path: singbox-gen
+
+  image:
+    needs: compile-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

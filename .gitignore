@@ -1,0 +1,5 @@
+# 部署数据（真实 homelab.yaml / 证书 / 私钥）只存在于部署机本地，绝不进仓库
+data/
+dist/
+singbox-gen
+*.exe

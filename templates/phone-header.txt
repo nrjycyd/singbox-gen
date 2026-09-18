@@ -1,0 +1,5 @@
+  // sing-box v1.14.0 手机端配置（SFA / SFI）—— 由 singbox-gen 从 homelab.yaml 生成，勿手改
+  // 分流 OxiDNS 瀑布流（DNS 与路由同序，首条命中即停）：
+  //  1 局域网 2a/2b/2c 自定义 3 广告 4 apple-cn 5 google-cn
+  //  6 geolocation-!cn + telegram 代理 7 国内域直连 8 兜底 realip（ECS + geoip-cn）
+  //  非国内路径已放开 AAAA（双栈直出真实地址；HTTPS/SVCB 由顶部全局拦截）

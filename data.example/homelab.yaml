@@ -1,0 +1,152 @@
+# CI 冒烟用脱敏配置（非真实值）。NAS 上实际配置放 data/homelab.yaml（不进 git）
+secret:
+  ui_token: "demo-ui"
+  profile_token: "demo-profile"
+
+ecs: "203.0.113.0/24"
+rule_dir: /usr/local/etc/sing-box/rules
+
+policy:                                # 分流块作用域：both|gateway|phone
+  pinned: gateway                      # 钉定块（见 pinned:）
+  cn_extra: gateway                    # 国内直连扩展块（仅网关）
+  telegram: both
+  clash: phone                         # Clash Mode 规则 + clash_api（仅手机）
+  fakeip: gateway
+  gh: both
+
+pinned:                                # 钉定块：下列规则集强制走 pinned.outbound
+  sets: ["geosite-category-scholar-cn", "geosite-category-games-cn"]
+  outbound: node-a
+
+gateway:
+  proxy_dns: fakeip-dns
+  dns_local:      {type: quic, tag: local-dns, server: 223.5.5.5, port: 853}
+  dns_remote:     {server: dns.google, port: 443}
+  fakeip_v4: "28.0.0.0/8"
+  fakeip_v6: "f2b0::/18"
+  gh_cidr: ["192.0.2.0/24"]
+  domain_resolver_server: local-dns
+  tun_interface: sing-box-tun
+  tun_address: ["172.19.0.1/30", "fdfe:dcba:9876::1/126"]
+  tun_mtu: 1500
+  mixed_port: 8888
+  socks_port: 7891
+  fake_in_port: 6666
+  api_port: 9091
+  dashboard_path: /usr/local/etc/sing-box/ui-sing-box
+  log_level: error
+  log_output: /usr/local/etc/sing-box/sing-box.log
+  cache_path: /usr/local/etc/sing-box/cache.db
+  store_fakeip: true
+
+phone:
+  proxy_dns: remote-dns
+  dns_bootstrap: {type: quic, tag: ali-dns, server: 223.5.5.5, port: 853}
+  dns_remote:    {server: dns.google, port: 443}
+  gh_cidr: ["192.0.2.0/24", "198.51.100.0/24"]
+  domain_resolver_server: ali-dns
+  tun_interface: tun0
+  tun_address: ["172.18.0.1/30", "fdfe:dcba:9876::1/126"]
+  tun_mtu: 9000
+  log_level: info
+  store_dns: true
+
+rule_sets:
+  - {group: geosite, item: private,            scope: both}
+  - {group: geosite, item: category-ads-all,   scope: both}
+  - {group: geosite, item: apple-cn,           scope: both}
+  - {group: geosite, item: google-cn,          scope: both}
+  - {group: geosite, item: telegram,           scope: both}
+  - {group: geosite, item: "geolocation-!cn",  scope: both}
+  - {group: geosite, item: category-scholar-cn, scope: gateway}
+  - {group: geosite, item: category-ai-cn,     scope: gateway}
+  - {group: geosite, item: category-games-cn,  scope: gateway}
+  - {group: geosite, item: "steam@cn",         scope: gateway}
+  - {group: geosite, item: cn,                 scope: both}
+  - {group: geoip,   item: cn,                 scope: both}
+  - {group: geoip,   item: telegram,           scope: both}
+
+cusdom:
+  gateway:
+    reject: ["reject.example.com"]
+    proxy: ["proxy.example.com"]
+    direct_suffix: ["direct.example.com"]
+  phone:
+    reject: ["reject.example.net"]
+    proxy: ["proxy.example.net"]
+    direct: ["home.example.net"]
+    direct_suffix: ["example.home"]
+
+selectors:
+  proxy:
+    members: [node-a, node-b, node-c]
+    default: {gateway: node-c, phone: node-b}
+  gh:
+    members:
+      gateway: ["node-e"]
+      phone: ["node-d", "node-e"]
+    default: {gateway: "node-e", phone: "node-d"}
+
+nodes:
+  - tag: node-a
+    kind: hysteria2
+    targets: [gateway, phone]
+    server: 203.0.113.10
+    ports: ["30000:50000"]
+    password: demo-password-1
+    up_mbps: 50
+    down_mbps: 100
+    obfs_password: demo-obfs-1
+    sni: www.example.com
+    cert_path: /usr/local/etc/sing-box/ssl/demo/cert.crt
+    cert_file: certs/node-a.crt
+  - tag: node-b
+    kind: hysteria2
+    targets: [gateway, phone]
+    server: 203.0.113.11
+    ports: ["30000:50000"]
+    password: demo-password-2
+    up_mbps: 50
+    down_mbps: 100
+    obfs_password: demo-obfs-2
+    sni: www.example.com
+    cert_path: /usr/local/etc/sing-box/ssl/demo/cert.crt
+    cert_file: certs/node-b.crt
+  - tag: node-c
+    kind: vless
+    targets: [gateway, phone]
+    server: 203.0.113.12
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    sni: demo.example.net
+  - tag: node-d
+    kind: hysteria2
+    targets: [phone]
+    server: home6.example.net
+    port: 17567
+    password: demo-password-3
+    up_mbps: 50
+    down_mbps: 100
+    sni: www.example.net
+    cert_file: certs/node-d.crt
+    ipv6_only_dns: true
+  - tag: node-e
+    kind: hysteria2
+    targets: [gateway, phone]
+    server: home6b.example.net
+    port: 17569
+    password: demo-password-4
+    up_mbps: 50
+    down_mbps: 100
+    sni: www.example.net
+    cert_path: /usr/local/etc/sing-box/ssl/demo/gh.crt
+    cert_file: certs/node-e.crt
+    ipv6_only_dns: true
+
+push:
+  host: 127.0.0.1
+  user: root
+  key_file: ""
+  password: demo
+  conf_dir: /usr/local/etc/sing-box/conf
+  service: sing-box

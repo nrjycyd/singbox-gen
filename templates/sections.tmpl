@@ -1,0 +1,204 @@
+{{define "b00"}}"log": {
+    "level": "{{.Sp.LogLevel}}",{{if .Sp.LogOutput}}
+    "output": "{{.Sp.LogOutput}}",{{end}}
+    "timestamp": true
+  }
+{{- end}}
+
+{{define "b01"}}"experimental": {
+{{if eq .Target "phone"}}{{if .F.clash}}    // Clash API：声明后手机 App 仪表盘出现 Clash Mode 切换卡片
+    "clash_api": {
+      "default_mode": "Rule"
+    },
+{{end}}{{end}}    "cache_file": {
+      "enabled": true,{{if .Sp.CachePath}}
+      "path": "{{.Sp.CachePath}}",{{end}}{{if .Sp.StoreFakeIP}}
+      "store_fakeip": true{{end}}{{if .Sp.StoreDNS}}
+      "store_dns": true{{end}}
+    }
+  }
+{{- end}}
+
+{{define "b02"}}"dns": {
+    "servers": [
+{{if eq .Target "gateway"}}      // 国外 DNS：DoH，走代理，解析国外域名
+      {
+        "type": "https",
+        "tag": "remote-dns",
+        "server": "{{.Sp.DnsRemote.Server}}",
+        "server_port": {{.Sp.DnsRemote.Port}},
+        "path": "/dns-query",
+        "domain_resolver": {
+          "server": "{{.Sp.DnsLocal.Tag}}",
+          "strategy": "ipv4_only"
+        },
+        "detour": "proxy"
+      },
+      // 本地 DNS：{{.Sp.DnsLocal.Type}}（{{.Sp.DnsLocal.Server}}），直连，解析国内域名
+      {
+        "type": "{{.Sp.DnsLocal.Type}}",
+        "tag": "{{.Sp.DnsLocal.Tag}}",
+        "server": "{{.Sp.DnsLocal.Server}}",
+        "server_port": {{.Sp.DnsLocal.Port}}
+      },
+      // FakeIP：{{.Sp.FakeIPV4}} + {{.Sp.FakeIPV6}}（主路由按对应段路由到 sing-box）
+      {
+        "type": "fakeip",
+        "tag": "fakeip-dns",
+        "inet4_range": "{{.Sp.FakeIPV4}}",
+        "inet6_range": "{{.Sp.FakeIPV6}}"
+      }
+{{else}}      // 引导 DNS：解析其他 DNS 服务器域名用（DoQ 直连阿里）
+      {
+        "type": "{{.Sp.DnsBootstrap.Type}}",
+        "tag": "{{.Sp.DnsBootstrap.Tag}}",
+        "server": "{{.Sp.DnsBootstrap.Server}}",
+        "server_port": {{.Sp.DnsBootstrap.Port}}
+      },
+      // 本地 DNS：手机系统默认 DNS（iOS 下=当前网络 DHCP DNS；在家即网关 DNS）
+      {
+        "type": "local",
+        "tag": "local-dns"
+      },
+      // 国外 DNS（等价 OxiDNS forward_foreign，走代理）
+      {
+        "type": "https",
+        "tag": "remote-dns",
+        "server": "{{.Sp.DnsRemote.Server}}",
+        "server_port": {{.Sp.DnsRemote.Port}},
+        "path": "/dns-query",
+        "domain_resolver": {
+          "server": "{{.Sp.DnsBootstrap.Tag}}",
+          "strategy": "ipv4_only"
+        },
+        "detour": "proxy"
+      }
+{{end}}    ],
+    "rules": [
+{{template "wdns" .}},
+{{if eq .Target "gateway"}}      // 8b 解析不出真实 IP（NXDOMAIN）→ 直接回 NXDOMAIN，不 fakeip 化
+      {
+        "match_response": true,
+        "response_rcode": "NXDOMAIN",
+        "action": "predefined",
+        "rcode": "NXDOMAIN"
+      },
+      // 国外域名（realip 判定非国内的 fake-in 查询）→ fakeip，连接时映射回域名走代理
+      {
+        "inbound": "fake-in",
+        "action": "route",
+        "server": "fakeip-dns",
+        "rewrite_ttl": 1
+      }
+{{else}}      {
+        "action": "respond"
+      }
+{{end}}    ]{{if eq .Target "gateway"}},
+    "final": "remote-dns",
+    "strategy": "prefer_ipv4"{{end}}
+  }
+{{- end}}
+
+{{define "b03"}}"inbounds": [
+{{if eq .Target "gateway"}}    // HTTP + SOCKS5 混合入站：手动指定代理的设备用
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "::",
+      "listen_port": {{.Sp.MixedPort}}
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "::",
+      "listen_port": {{.Sp.SocksPort}}
+    },
+    // TUN 透明代理：auto_redirect 优于 tproxy 且避开 Docker 冲突
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "{{.Sp.TunIface}}",
+      "address": [{{.TunAddrs}}],
+      "mtu": {{.Sp.TunMTU}},
+      "dns_mode": "disabled",
+      "auto_route": true,
+      "auto_redirect": true,
+      "strict_route": true,
+      "stack": "mixed"
+    },
+    // FakeIP DNS 入口：SmartDNS 把国外域名查询转发到这里，经 hijack-dns 进 DNS 模块
+    {
+      "type": "direct",
+      "tag": "fake-in",
+      "listen": "::",
+      "listen_port": {{.Sp.FakeInPort}}
+    }
+{{else}}    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "{{.Sp.TunIface}}",
+      "address": [{{.TunAddrs}}],
+      "mtu": {{.Sp.TunMTU}},
+      "dns_mode": "hijack",
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    }
+{{end}}  ]
+{{- end}}
+
+{{define "b05"}}"route": {
+    "rule_set": [
+{{.RuleSetLines}}
+    ],
+    "rules": [
+{{if eq .Target "gateway"}}      {"inbound": "fake-in", "action": "hijack-dns"},
+      {"action": "sniff"},
+{{else}}      {"action": "sniff"},
+      {"protocol": "dns", "action": "hijack-dns"},
+{{end}}{{template "wroute" .}}
+    ],
+{{if eq .Target "gateway"}}    "default_domain_resolver": {
+      "server": "{{.Sp.DomainResolv}}",
+      "strategy": "ipv4_only"
+    },
+    "auto_detect_interface": true,
+    // default_mark 已移除：与 tun auto_redirect 冲突（sing-box 官方文档明确）
+    "final": "select"
+{{else}}    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "{{.Sp.DomainResolv}}",
+      "strategy": "ipv4_only"
+    },
+    "default_http_client": "rule-set-download",
+    "final": "select"
+{{end}}  }
+{{- end}}
+
+{{define "b06"}}"http_clients": [
+    // 共享 HTTP client：规则集 / dashboard 下载用（走代理出站）
+    {
+      "tag": "rule-set-download",
+      "detour": "proxy"
+    }
+  ]
+{{- end}}
+
+{{define "b07"}}"services": [
+    // sing-box API 服务：管理 + 官方 dashboard
+    {
+      "type": "api",
+      "tag": "sing-box-api",
+      "listen": "0.0.0.0",
+      "listen_port": {{.Sp.ApiPort}},
+      "access_control_allow_origin": [],
+      "access_control_allow_private_network": true,
+      "dashboard": {
+        "enabled": true,
+        "path": "{{.Sp.DashboardPath}}",
+        "http_client": "rule-set-download",
+        "update_interval": "1d"
+      }
+    }
+  ]
+{{- end}}

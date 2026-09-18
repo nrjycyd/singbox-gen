@@ -1,0 +1,223 @@
+{{define "wdns"}}      // 拦截特殊查询类型（SOA/PTR/HTTPS/SVCB），返回空 NOERROR
+      {
+        "query_type": ["SOA", "PTR", "HTTPS", "SVCB"],
+        "action": "predefined",
+        "rcode": "NOERROR"
+      },
+      // 只允许 A/AAAA 查询，其余类型一律拒绝
+      {
+        "query_type": ["A", "AAAA"],
+        "invert": true,
+        "action": "reject"
+      },
+      // 1 局域网(private) → 本地 DNS
+      {
+        "rule_set": ["geosite-private"],
+        "action": "route",
+        "server": "local-dns"
+      },
+{{if .F.clash}}      // 模式：直连 → 本地/系统 DNS（不经代理）
+      {
+        "clash_mode": "Direct",
+        "action": "route",
+        "server": "local-dns"
+      },
+      // 模式：全局 → 代理 DNS（防泄漏）
+      {
+        "clash_mode": "Global",
+        "action": "route",
+        "server": "remote-dns"
+      },
+{{end}}      // 2a 自定义拒绝 → NXDOMAIN
+      {
+        "rule_set": ["cusdom-reject"],
+        "action": "predefined",
+        "rcode": "NXDOMAIN"
+      },
+      // 2b 自定义代理 → {{.ProxyDNS}}
+      {
+        "rule_set": ["cusdom-proxy"],
+        "action": "route",
+        "server": "{{.ProxyDNS}}"
+      },
+      // 2c 自定义直连 → 本地 DNS
+      {
+        "rule_set": ["cusdom-direct"],
+        "action": "route",
+        "server": "local-dns"
+      },
+      // 3 广告 → NXDOMAIN
+      {
+        "rule_set": ["geosite-category-ads-all"],
+        "action": "predefined",
+        "rcode": "NXDOMAIN"
+      },
+      // 4 apple 国内可直连 → 本地 DNS
+      {
+        "rule_set": ["geosite-apple-cn"],
+        "action": "route",
+        "server": "local-dns"
+      },
+      // 5 google 国内可直连 → 本地 DNS
+      {
+        "rule_set": ["geosite-google-cn"],
+        "action": "route",
+        "server": "local-dns"
+      },
+      // 6 非国内域名 → {{.ProxyDNS}}
+      {
+        "rule_set": [
+{{if .F.pinned}}{{range .PinnedSets}}          "{{.}}",
+{{end}}{{end}}{{if .F.telegram}}          "geosite-telegram",
+{{end}}          "geosite-geolocation-!cn"
+        ],
+        "action": "route",
+        "server": "{{.ProxyDNS}}"
+      },
+      // 7 国内域 → 本地 DNS
+      {
+        "rule_set": [
+{{if .F.cn_extra}}          "geosite-category-scholar-cn",
+          "geosite-category-ai-cn",
+          "geosite-category-games-cn",
+          "geosite-steam@cn",
+{{end}}          "geosite-cn"
+        ],
+        "action": "route",
+        "server": "local-dns"
+      },
+      // 8 兜底 realip：remote-dns 带国内 ECS 解析，geoip-cn 命中则直接返回真实 IP
+      {
+        "action": "evaluate",
+        "server": "remote-dns",
+        "client_subnet": {{.Ecs}}
+      },
+      {
+        "match_response": true,
+        "rule_set": ["geoip-cn"],
+        "action": "respond"
+      }
+{{- end}}
+
+{{define "wroute"}}      // 公共 DNS 走代理，防 DNS 泄漏
+      {
+        "ip_cidr": [
+          "1.1.1.1/32", "1.0.0.1/32", "8.8.8.8/32", "8.8.4.4/32",
+          "2001:4860:4860::8888/128", "2001:4860:4860::8844/128",
+          "2606:4700:4700::1111/128", "2606:4700:4700::1001/128"
+        ],
+        "action": "route",
+        "outbound": "proxy"
+      },
+      // 阿里 DNS 直连
+      {
+        "ip_cidr": ["223.5.5.5/32", "223.6.6.6/32"],
+        "action": "route",
+        "outbound": "direct"
+      },
+      // 拒 DoT / UDP443(QUIC) / STUN
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          { "port": 853 },
+          { "network": "udp", "port": 443 },
+          { "protocol": "stun" }
+        ],
+        "action": "reject",
+        "method": "drop"
+      },
+{{if .F.gh}}      // gh 特判网段 → 走 gh
+      {
+        "ip_cidr": [{{.GhLan}}],
+        "action": "route",
+        "outbound": "gh"
+      },
+{{end}}      // 私网地址直连
+      {
+        "ip_is_private": true,
+        "action": "route",
+        "outbound": "direct"
+      },
+      // 1 局域网(private) → 直连
+      {
+        "rule_set": ["geosite-private"],
+        "action": "route",
+        "outbound": "direct"
+      },
+{{if .F.clash}}      // 模式：直连 → 其余流量全部直连（上面局域网/私有域规则仍生效）
+      {
+        "clash_mode": "Direct",
+        "action": "route",
+        "outbound": "direct"
+      },
+      // 模式：全局 → 其余流量全部走节点选择器 proxy
+      {
+        "clash_mode": "Global",
+        "action": "route",
+        "outbound": "proxy"
+      },
+{{end}}      // 2a 自定义拒绝 → 拦截
+      {
+        "rule_set": ["cusdom-reject"],
+        "action": "reject"
+      },
+      // 2b 自定义代理 → 走代理
+      {
+        "rule_set": ["cusdom-proxy"],
+        "action": "route",
+        "outbound": "select"
+      },
+      // 2c 自定义直连 → 直连
+      {
+        "rule_set": ["cusdom-direct"],
+        "action": "route",
+        "outbound": "direct"
+      },
+      // 3 广告 → 拦截
+      {
+        "rule_set": ["geosite-category-ads-all"],
+        "action": "reject"
+      },
+      // 4 apple 国内可直连 → 直连
+      {
+        "rule_set": ["geosite-apple-cn"],
+        "action": "route",
+        "outbound": "direct"
+      },
+      // 5 google 国内可直连 → 直连
+      {
+        "rule_set": ["geosite-google-cn"],
+        "action": "route",
+        "outbound": "direct"
+      },
+      // 6 非国内域名或 IP → 走代理
+{{if .F.pinned}}{{range .PinnedSets}}      {"rule_set": ["{{.}}"], "action": "route", "outbound": "{{$.PinnedOutbound}}"},
+{{end}}{{end}}{{if .F.telegram}}      {
+        "rule_set": ["geosite-telegram", "geoip-telegram"],
+        "action": "route",
+        "outbound": "select"
+      },
+{{end}}      {
+        "rule_set": ["geosite-geolocation-!cn"],
+        "action": "route",
+        "outbound": "select"
+      },
+      // 7 国内域 → 直连
+{{if .F.cn_extra}}      {"rule_set": ["geosite-category-scholar-cn"], "action": "route", "outbound": "direct"},
+      {"rule_set": ["geosite-category-ai-cn"], "action": "route", "outbound": "direct"},
+      {"rule_set": ["geosite-category-games-cn"], "action": "route", "outbound": "direct"},
+      {"rule_set": ["geosite-steam@cn"], "action": "route", "outbound": "direct"},
+{{end}}      {
+        "rule_set": ["geosite-cn"],
+        "action": "route",
+        "outbound": "direct"
+      },
+      // 8 兜底 realip：域名解析为 IP 后按 geoip-cn 分流
+      { "action": "resolve" },
+      {
+        "rule_set": ["geoip-cn"],
+        "action": "route",
+        "outbound": "direct"
+      }
+{{- end}}
