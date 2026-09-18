@@ -5,7 +5,6 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	"os"
 )
 
 //go:embed ui.html
@@ -16,8 +15,11 @@ func main() {
 	addr := flag.String("addr", ":8090", "监听地址")
 	flag.Parse()
 
-	if _, err := os.Stat(*data + "/homelab.yaml"); err != nil {
-		log.Fatalf("找不到 %s/homelab.yaml（volume 是否正确挂载？）", *data)
+	if err := Bootstrap(*data); err != nil {
+		log.Fatalf("数据目录初始化失败: %v", err)
+	}
+	if IsSampleConfig(*data) {
+		log.Printf("警告: 当前使用自动生成的示例配置（占位节点），请在 Web UI 中替换为真实配置")
 	}
 	c, err := LoadConfig(*data + "/homelab.yaml")
 	if err != nil {

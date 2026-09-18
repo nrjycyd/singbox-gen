@@ -41,7 +41,7 @@ func errOut(w http.ResponseWriter, code int, msg string) {
 
 func (s *Server) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") && !s.tokOK(r) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/status" && !s.tokOK(r) {
 			errOut(w, 401, "token 缺失或不正确")
 			return
 		}
@@ -51,6 +51,7 @@ func (s *Server) Middleware(next http.Handler) http.Handler {
 
 func (s *Server) HandleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config", s.apiConfig)
+	mux.HandleFunc("/api/status", s.apiStatus)
 	mux.HandleFunc("/api/preview", s.apiPreview)
 	mux.HandleFunc("/api/push", s.apiPush)
 	mux.HandleFunc("/download/gateway", s.dlGateway)
@@ -95,6 +96,10 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
+	jsonOut(w, map[string]any{"sample": IsSampleConfig(s.dataDir)})
+}
+
 func renderAll(c *Config, dataDir string) (gw map[string]string, phoneFull, phoneNoCmt string, err error) {
 	gw, err = RenderGateway(c, dataDir)
 	if err != nil {
@@ -137,6 +142,10 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiPush(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		errOut(w, 405, "method")
+		return
+	}
+	if IsSampleConfig(s.dataDir) {
+		errOut(w, 400, "当前是自动生成的示例配置（占位节点），请先在 UI 中替换为真实配置再推送")
 		return
 	}
 	c, err := s.loadCfg()

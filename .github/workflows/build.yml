@@ -22,24 +22,22 @@ jobs:
           go vet ./...
           gofmt -l . | tee fmt.log; test ! -s fmt.log || echo "::warning::gofmt 存在未格式化文件"
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o singbox-gen .
-      - name: smoke render (产物必须通过内置校验)
+      - name: smoke render (空数据目录引导 + 两端渲染 + 内置校验)
         run: |
-          mkdir -p /tmp/d/certs
-          cp data.example/homelab.yaml /tmp/d/homelab.yaml
-          # 证书属部署数据（不进仓库）：CI 临时生成自签证书供渲染冒烟
-          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
-            -days 1 -nodes -keyout /tmp/k.pem -out /tmp/c.pem \
-            -subj "/CN=www.example.com" -addext "subjectAltName=DNS:www.example.com" >/dev/null 2>&1
-          for c in node-a node-b node-d node-e; do cp /tmp/c.pem /tmp/d/certs/$c.crt; done
+          # 只给一个空目录：验证首次运行自动引导（示例配置 + 占位自签证书）
+          mkdir -p /tmp/d
           ./singbox-gen -data /tmp/d -addr 127.0.0.1:18090 &
           sleep 1
+          test -f /tmp/d/homelab.yaml || { echo "引导失败: 未生成 homelab.yaml"; exit 1; }
+          ls -l /tmp/d /tmp/d/certs
           # /p 走完整渲染管线（dns/route 装配 + 解析 + 引用闭环），失败即非 200
           curl -fsS http://127.0.0.1:18090/p/demo-profile/mobile.json -o /tmp/mobile.json
-          head -c 200 /tmp/mobile.json
+          head -c 160 /tmp/mobile.json; echo
           # 网关端同样走渲染 + 校验（含 pinned 块）
           curl -fsS "http://127.0.0.1:18090/download/gateway?token=demo-ui" -o /tmp/gw.zip
           test -s /tmp/gw.zip && echo "gateway render OK ($(stat -c%s /tmp/gw.zip) bytes)"
-          curl -fsS http://127.0.0.1:18090/ >/dev/null && echo "server + render OK"
+          curl -fsS http://127.0.0.1:18090/api/status
+          curl -fsS http://127.0.0.1:18090/ >/dev/null && echo "bootstrap + render OK"
       - uses: actions/upload-artifact@v4
         with:
           name: singbox-gen-linux

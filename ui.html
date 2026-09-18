@@ -36,6 +36,10 @@ a.sub{color:var(--acc);word-break:break-all}
   <button class="alt" onclick="push()">推送到网关(check 门禁)</button>
   <span id="status"></span>
 </header>
+<div id="banner" style="display:none;background:#5a3a12;color:#ffd9a0;padding:6px 16px;font-size:13px">
+  当前使用<strong>自动生成的示例配置</strong>（节点为占位值，仅用于验证渲染与 UI）。
+  请编辑 homelab.yaml 填入真实节点/凭据/ECS，或把真实配置覆盖到 data/homelab.yaml 后重启容器。
+</div>
 <main>
   <section class="pane" style="flex:5">
     <h3>homelab.yaml（唯一事实源）</h3>
@@ -85,6 +89,7 @@ async function push(){
 }
 $('#token').value=localStorage.getItem('singbox-gen_token')||'';
 $('#token').addEventListener('input',()=>localStorage.setItem('singbox-gen_token',tok()));
+fetch('/api/status').then(r=>r.json()).then(j=>{if(j.sample)$('#banner').style.display='block'}).catch(()=>{});
 loadCfg();
 </script>
 </body>

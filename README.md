@@ -8,6 +8,30 @@
 分流骨架为 DNS/route 同源的瀑布流（`templates/waterfalls.tmpl`），按 `policy.*` 作用域开关；
 模板细节全部封装在 `templates/`，日常只改 YAML。
 
+## 首次运行（自动引导）
+
+容器启动时会自动准备数据目录，**空卷也能直接起来**：
+
+1. 创建 `data/certs`、`data/keys`
+2. 若无 `data/homelab.yaml` → 从内置示例生成一份（占位节点/凭据）并打印警告
+3. 为示例配置中的手机端证书自动生成**占位自签证书**（仅示例用）
+
+此时 Web UI 顶部会显示醒目的"当前使用示例配置"横幅。真实部署只需把真实配置与证书放进去：
+
+```bash
+cd <部署目录>
+# 方式一：整体替换
+cp <真实>/homelab.yaml  data/homelab.yaml
+cp <真实>/certs/*.crt   data/certs/
+cp <SSH私钥>            data/keys/id_ed25519
+docker compose restart
+
+# 方式二：打开 UI 直接改 YAML → 保存（token 见 secret.ui_token，示例为 demo-ui）
+```
+
+> ⚠️ 真实配置缺失的证书**不会**被自动生成（否则会掩盖错误、导致 TLS 校验失败）——
+> 生成逻辑只在首次引导示例配置时执行。
+
 ## 编译与发布（GitHub Actions）
 
 1. 建仓库并推送本目录：
@@ -18,18 +42,20 @@
    git push -u origin main
    ```
 
-   > 仓库只带**脱敏示例** `data.example/homelab.yaml`（CI 冒烟 + 字段文档）；
+   > 仓库只带脱敏示例 `templates/homelab.example.yaml`；
    > 真实 `data/`（homelab.yaml、证书、SSH 私钥）被 .gitignore 排除，永不进仓库。
-2. Actions 自动执行：`go vet + build`（编译门禁）→ 二进制冒烟（手机端 + 网关端完整渲染，
-   CI 临时生成自签证书，产物过 JSON 解析 + 引用闭环校验）→ 推送镜像 `ghcr.io/<user>/<repo>:latest`
+2. Actions 自动执行：`go vet + build`（编译门禁）→ 冒烟（**空目录引导** + 手机端/网关端完整渲染，
+   产物过 JSON 解析 + 引用闭环校验）→ 推送镜像 `ghcr.io/<user>/<repo>:latest`
 3. GHCR 包设为 public（Settings → Packages → 该包 → Make public），部署机免登录拉取：
 
    ```bash
-   cd <部署目录>                 # 含 docker-compose.yml 与 data/
+   cd <部署目录>                 # 含 docker-compose.yml
    docker compose pull && docker compose up -d
    ```
 
    > 先把 compose `image:` 改成你的 GHCR 路径（必须全小写）。
+   > DSM Container Manager「项目」方式部署时，`./data` 按 DSM 选定的项目目录解析；
+   > 若怀疑解析错位，把 volume 改成绝对路径 `- /<绝对路径>/data:/data`。
 4. 浏览器打开 `http://<部署机IP>:8090`，右上角输入 `secret.ui_token` 即可使用
 
 ## 手机订阅
@@ -53,17 +79,19 @@ http://<部署机IP>:8090/p/<secret.profile_token>/mobile.json
 
 | | 内容 | 位置 |
 |---|---|---|
-| 仓库 | Go 源码、`templates/` 骨架、Dockerfile、CI、脱敏示例 | GitHub |
+| 仓库 | Go 源码、`templates/` 骨架（含脱敏示例）、Dockerfile、CI | GitHub |
 | 部署数据 | 真实 homelab.yaml、`certs/*.crt` 内联证书、`keys/` SSH 私钥 | 部署机 `data/`（bind mount，不进镜像、不进 git） |
 
 ## 目录
 
 ```
-data.example/homelab.yaml   脱敏示例（字段文档 + CI 冒烟输入）
-templates/                  骨架模板：sections.tmpl / waterfalls.tmpl /
-                            phone-header.txt / systemd-unit.txt
-*.go                        装配（config/render/validate）+ 服务（web/push/main）
-ui.html                     内置 Web UI
+templates/homelab.example.yaml   脱敏示例（首次引导生成配置的模板 + 字段文档）
+templates/sections.tmpl          固定段模板（log/dns/inbounds/route 头尾/experimental…）
+templates/waterfalls.tmpl        分流瀑布流（DNS + route，两端同源）
+templates/phone-header.txt       手机 profile 头部注释
+templates/systemd-unit.txt       systemd 单元
+*.go                             装配（config/render/validate/bootstrap）+ 服务（web/push/main）
+ui.html                          内置 Web UI
 ```
 
 ## 修改配置的正确姿势
