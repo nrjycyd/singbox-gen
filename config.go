@@ -132,6 +132,12 @@ type PushSpec struct {
 	Service  string `yaml:"service"`
 }
 
+// Rule: 一条分流规则。除元键外，所有键原样进入 sing-box 规则对象。
+// 元键：_note 注释 | _scope both|gateway|phone | _if 策略开关名 | _for_each 列表名（pinned_sets）
+// 字符串值支持变量：{{proxy_dns}} {{local_dns}} {{remote_dns}} {{ecs}} {{pinned_outbound}} {{item}}
+// 列表值支持整项替换：["{{gh_cidr}}"] → 展开为目标端的 gh 网段列表
+type Rule map[string]any
+
 // PinnedSpec: 钉定块（指定规则集强制走指定出口）
 type PinnedSpec struct {
 	Sets     []string `yaml:"sets"`     // 规则集 tag 列表（需在 rule_sets 中定义）
@@ -162,6 +168,10 @@ type Config struct {
 	} `yaml:"selectors"`
 	Nodes  []Node   `yaml:"nodes"`
 	Push   PushSpec `yaml:"push"`
+
+	// 分流规则（单一事实源；顺序即优先级，首条命中即停）
+	DnsRules   []Rule `yaml:"dns_rules"`
+	RouteRules []Rule `yaml:"route_rules"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -184,6 +194,9 @@ func LoadConfig2(text string) (*Config, error) {
 		if !knownFlags[k] {
 			return nil, fmt.Errorf("policy 含未知开关 %q（可用: pinned/cn_extra/clash/fakeip/telegram/gh）", k)
 		}
+	}
+	if len(c.DnsRules) == 0 || len(c.RouteRules) == 0 {
+		return nil, fmt.Errorf("缺少 dns_rules / route_rules（可从 templates/homelab.example.yaml 复制规则段）")
 	}
 	return c, nil
 }

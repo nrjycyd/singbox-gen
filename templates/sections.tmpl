@@ -75,25 +75,8 @@
       }
 {{end}}    ],
     "rules": [
-{{template "wdns" .}},
-{{if eq .Target "gateway"}}      // 8b 解析不出真实 IP（NXDOMAIN）→ 直接回 NXDOMAIN，不 fakeip 化
-      {
-        "match_response": true,
-        "response_rcode": "NXDOMAIN",
-        "action": "predefined",
-        "rcode": "NXDOMAIN"
-      },
-      // 国外域名（realip 判定非国内的 fake-in 查询）→ fakeip，连接时映射回域名走代理
-      {
-        "inbound": "fake-in",
-        "action": "route",
-        "server": "fakeip-dns",
-        "rewrite_ttl": 1
-      }
-{{else}}      {
-        "action": "respond"
-      }
-{{end}}    ]{{if eq .Target "gateway"}},
+{{.DnsRules}}
+    ]{{if eq .Target "gateway"}},
     "final": "remote-dns",
     "strategy": "prefer_ipv4"{{end}}
   }
@@ -152,11 +135,7 @@
 {{.RuleSetLines}}
     ],
     "rules": [
-{{if eq .Target "gateway"}}      {"inbound": "fake-in", "action": "hijack-dns"},
-      {"action": "sniff"},
-{{else}}      {"action": "sniff"},
-      {"protocol": "dns", "action": "hijack-dns"},
-{{end}}{{template "wroute" .}}
+{{.RouteRules}}
     ],
 {{if eq .Target "gateway"}}    "default_domain_resolver": {
       "server": "{{.Sp.DomainResolv}}",

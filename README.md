@@ -5,8 +5,8 @@
 - **gateway（Linux / SFL）**：目录型 conf（00~07 + systemd 单元），Web 下载 zip 或 SSH 推送
 - **phone（SFA / SFI）**：单文件 profile（注释版 + nocomment 版），经订阅 URL 分发给手机客户端
 
-分流骨架为 DNS/route 同源的瀑布流（`templates/waterfalls.tmpl`），按 `policy.*` 作用域开关；
-模板细节全部封装在 `templates/`，日常只改 YAML。
+分流规则（DNS 与 route 同源瀑布流）全部定义在 `data/homelab.yaml` 的 `dns_rules` / `route_rules` 中，
+顺序即优先级、可按 `_scope` 分端、按 `_if` 受策略开关控制；模板只保留固定段骨架。
 
 ## 首次运行（自动引导）
 
@@ -88,18 +88,32 @@ http://<部署机IP>:8090/p/<secret.profile_token>/mobile.json
 ## 目录
 
 ```
-templates/homelab.example.yaml   脱敏示例（首次引导生成配置的模板 + 字段文档）
-templates/sections.tmpl          固定段模板（log/dns/inbounds/route 头尾/experimental…）
-templates/waterfalls.tmpl        分流瀑布流（DNS + route，两端同源）
+templates/homelab.example.yaml   脱敏示例（首次引导模板 + 字段/规则文档）
+templates/sections.tmpl          固定段模板（log/dns 服务器/inbounds/route 选项/experimental…）
 templates/phone-header.txt       手机 profile 头部注释
 templates/systemd-unit.txt       systemd 单元
 *.go                             装配（config/render/validate/bootstrap）+ 服务（web/push/main）
 ui.html                          内置 Web UI
 ```
 
-## 修改配置的正确姿势
+## 修改配置的正确姿势（全部在 YAML 里，无需改代码）
 
-1. 开关类 → `policy:`（作用域 both/gateway/phone）、`rule_sets:`、`cusdom:`
-2. 钉定站点（指定规则集强制走指定出口）→ `pinned.sets`（规则集 tag，需在 `rule_sets` 定义）+ `pinned.outbound`
-3. 改瀑布流本体 → 编辑 `templates/waterfalls.tmpl`（两端同步生效），提交前"生成预览"看两端产物
-4. 加节点 → `nodes:` + 对应 `selectors.members`
+1. **分流规则** → `dns_rules:` / `route_rules:`：**顺序即优先级，首条命中即停**。
+   每条形如：
+
+   ```yaml
+   - _note: 6 Telegram → 代理 DNS        # 生成到产物里的注释
+     _if: telegram                        # 可选：受 policy.telegram 开关控制
+     _scope: both                         # 可选：both|gateway|phone（默认 both）
+     _for_each: pinned_sets               # 可选：按列表循环展开（内置 pinned_sets）
+     rule_set: [geosite-telegram]         # 其余键原样进入 sing-box 规则对象
+     action: route
+     server: "{{proxy_dns}}"
+   ```
+
+   可用变量：`{{proxy_dns}}`（fakeip-dns/remote-dns）`{{local_dns}}` `{{remote_dns}}` `{{ecs}}`
+   `{{pinned_outbound}}` `{{item}}`（循环项）；列表整项展开：`ip_cidr: ["{{gh_cidr}}"]`
+2. 开关类 → `policy:`（作用域 both/gateway/phone）、`rule_sets:`（含 scope）、`cusdom:`
+3. 钉定站点 → `pinned.sets` + `pinned.outbound`
+4. 节点 → `nodes:` + 对应 `selectors.members`
+5. 只有改"固定段结构"（如 DNS 服务器列表、route 选项块）才需要动 `templates/sections.tmpl`

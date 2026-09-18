@@ -66,6 +66,210 @@ rule_sets:
   - {group: geoip,   item: cn,                 scope: both}
   - {group: geoip,   item: telegram,           scope: both}
 
+# ============ 分流规则（顺序即优先级，首条命中即停）============
+# 元键：_note 注释 | _scope both|gateway|phone | _if 策略开关 | _for_each 列表循环
+# 变量：{{proxy_dns}} {{local_dns}} {{remote_dns}} {{ecs}} {{pinned_outbound}} {{item}}
+# 变量可整项展开列表：ip_cidr: ["{{gh_cidr}}"]
+dns_rules:
+  - _note: 拦截特殊查询类型（SOA/PTR/HTTPS/SVCB），返回空 NOERROR
+    query_type: [SOA, PTR, HTTPS, SVCB]
+    action: predefined
+    rcode: NOERROR
+  - _note: 只允许 A/AAAA 查询，其余类型一律拒绝
+    query_type: [A, AAAA]
+    invert: true
+    action: reject
+  - _note: 1 局域网(private) 直连 → 本地 DNS
+    rule_set: [geosite-private]
+    action: route
+    server: "{{local_dns}}"
+  - _note: "Clash 模式：直连 → 本地/系统 DNS"
+    _if: clash
+    clash_mode: Direct
+    action: route
+    server: "{{local_dns}}"
+  - _note: "Clash 模式：全局 → 代理 DNS（防泄漏）"
+    _if: clash
+    clash_mode: Global
+    action: route
+    server: "{{remote_dns}}"
+  - _note: 2a 自定义拒绝 → NXDOMAIN
+    rule_set: [cusdom-reject]
+    action: predefined
+    rcode: NXDOMAIN
+  - _note: 2b 自定义代理 → 代理 DNS
+    rule_set: [cusdom-proxy]
+    action: route
+    server: "{{proxy_dns}}"
+  - _note: 2c 自定义直连 → 本地 DNS
+    rule_set: [cusdom-direct]
+    action: route
+    server: "{{local_dns}}"
+  - _note: 3 广告 → NXDOMAIN
+    rule_set: [geosite-category-ads-all]
+    action: predefined
+    rcode: NXDOMAIN
+  - _note: 4 apple 国内可直连 → 本地 DNS
+    rule_set: [geosite-apple-cn]
+    action: route
+    server: "{{local_dns}}"
+  - _note: 5 google 国内可直连 → 本地 DNS
+    rule_set: [geosite-google-cn]
+    action: route
+    server: "{{local_dns}}"
+  - _note: 6 钉定站点 → 代理 DNS
+    _if: pinned
+    _for_each: pinned_sets
+    rule_set: ["{{item}}"]
+    action: route
+    server: "{{proxy_dns}}"
+  - _note: 6 Telegram → 代理 DNS
+    _if: telegram
+    rule_set: [geosite-telegram]
+    action: route
+    server: "{{proxy_dns}}"
+  - _note: 6 非国内域名 → 代理 DNS
+    rule_set: [geosite-geolocation-!cn]
+    action: route
+    server: "{{proxy_dns}}"
+  - _note: 7 国内扩展域 → 本地 DNS
+    _if: cn_extra
+    rule_set: [geosite-category-scholar-cn, geosite-category-ai-cn, geosite-category-games-cn, "geosite-steam@cn"]
+    action: route
+    server: "{{local_dns}}"
+  - _note: 7 国内域 → 本地 DNS
+    rule_set: [geosite-cn]
+    action: route
+    server: "{{local_dns}}"
+  - _note: 8 兜底 realip：远端 DNS 带国内 ECS 解析
+    action: evaluate
+    server: "{{remote_dns}}"
+    client_subnet: "{{ecs}}"
+  - _note: 8 响应为国内 IP → 直接返回真实 IP
+    match_response: true
+    rule_set: [geoip-cn]
+    action: respond
+  - _note: 8b 解析不出真实 IP（NXDOMAIN）→ 直接回 NXDOMAIN，不 fakeip 化
+    _scope: gateway
+    match_response: true
+    response_rcode: NXDOMAIN
+    action: predefined
+    rcode: NXDOMAIN
+  - _note: 国外域名（fake-in 查询）→ fakeip，连接时映射回域名走代理
+    _scope: gateway
+    inbound: fake-in
+    action: route
+    server: "{{proxy_dns}}"
+    rewrite_ttl: 1
+  - _note: 兜底响应（手机端：直接返回远端解析结果）
+    _scope: phone
+    action: respond
+
+route_rules:
+  - _note: fake-in 入站的 DNS 劫持
+    _scope: gateway
+    inbound: fake-in
+    action: hijack-dns
+  - _note: 域名嗅探（取 SNI，供规则匹配）
+    action: sniff
+  - _note: 手机端：劫持 DNS 流量
+    _scope: phone
+    protocol: dns
+    action: hijack-dns
+  - _note: 公共 DNS 走代理，防 DNS 泄漏
+    ip_cidr: [1.1.1.1/32, 1.0.0.1/32, 8.8.8.8/32, 8.8.4.4/32, "2001:4860:4860::8888/128", "2001:4860:4860::8844/128", "2606:4700:4700::1111/128", "2606:4700:4700::1001/128"]
+    action: route
+    outbound: proxy
+  - _note: 阿里 DNS 直连
+    ip_cidr: [223.5.5.5/32, 223.6.6.6/32]
+    action: route
+    outbound: direct
+  - _note: 拒 DoT / UDP443(QUIC) / STUN
+    type: logical
+    mode: or
+    rules:
+      - port: 853
+      - network: udp
+        port: 443
+      - protocol: stun
+    action: reject
+    method: drop
+  - _note: 特判网段 → 走 gh
+    _if: gh
+    ip_cidr: ["{{gh_cidr}}"]
+    action: route
+    outbound: gh
+  - _note: 私网地址直连
+    ip_is_private: true
+    action: route
+    outbound: direct
+  - _note: 1 局域网(private) → 直连
+    rule_set: [geosite-private]
+    action: route
+    outbound: direct
+  - _note: "Clash 模式：直连 → 其余流量全部直连"
+    _if: clash
+    clash_mode: Direct
+    action: route
+    outbound: direct
+  - _note: "Clash 模式：全局 → 其余流量走节点选择器"
+    _if: clash
+    clash_mode: Global
+    action: route
+    outbound: proxy
+  - _note: 2a 自定义拒绝 → 拦截
+    rule_set: [cusdom-reject]
+    action: reject
+  - _note: 2b 自定义代理 → 走代理
+    rule_set: [cusdom-proxy]
+    action: route
+    outbound: select
+  - _note: 2c 自定义直连 → 直连
+    rule_set: [cusdom-direct]
+    action: route
+    outbound: direct
+  - _note: 3 广告 → 拦截
+    rule_set: [geosite-category-ads-all]
+    action: reject
+  - _note: 4 apple 国内可直连 → 直连
+    rule_set: [geosite-apple-cn]
+    action: route
+    outbound: direct
+  - _note: 5 google 国内可直连 → 直连
+    rule_set: [geosite-google-cn]
+    action: route
+    outbound: direct
+  - _note: 6 钉定站点 → 指定出口
+    _if: pinned
+    _for_each: pinned_sets
+    rule_set: ["{{item}}"]
+    action: route
+    outbound: "{{pinned_outbound}}"
+  - _note: 6 Telegram → 走代理
+    _if: telegram
+    rule_set: [geosite-telegram, geoip-telegram]
+    action: route
+    outbound: select
+  - _note: 6 非国内域名或 IP → 走代理
+    rule_set: [geosite-geolocation-!cn]
+    action: route
+    outbound: select
+  - _note: 7 国内扩展域 → 直连
+    _if: cn_extra
+    rule_set: [geosite-category-scholar-cn, geosite-category-ai-cn, geosite-category-games-cn, "geosite-steam@cn"]
+    action: route
+    outbound: direct
+  - _note: 7 国内域 → 直连
+    rule_set: [geosite-cn]
+    action: route
+    outbound: direct
+  - _note: 8 兜底 realip：域名解析为 IP 后按 geoip-cn 分流
+    action: resolve
+  - _note: 8 国内 IP → 直连
+    rule_set: [geoip-cn]
+    action: route
+    outbound: direct
+
 cusdom:
   gateway:
     reject: ["reject.example.com"]

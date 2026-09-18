@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"sort"
 	"strings"
 	"text/template"
 )
@@ -23,8 +24,10 @@ type Ctx struct {
 	TunAddrs     string
 	PinnedSets     []string
 	PinnedOutbound string
-	RuleSetLines string
-	DataDir      string
+	RuleSetLines   string
+	DnsRules       string
+	RouteRules     string
+	DataDir        string
 }
 
 func BuildCtx(c *Config, target, dataDir string) (*Ctx, error) {
@@ -55,6 +58,26 @@ func BuildCtx(c *Config, target, dataDir string) (*Ctx, error) {
 	entries = append(entries, cusdomEntries(c.Cusdom[target])...)
 	ruleSetLines := strings.Join(entries, ",\n")
 
+	vars := map[string]string{
+		"proxy_dns":       sp.ProxyDNS,
+		"local_dns":       "local-dns",
+		"remote_dns":      "remote-dns",
+		"ecs":             c.Ecs,
+		"pinned_outbound": c.Pinned.Outbound,
+	}
+	listVars := map[string][]string{
+		"pinned_sets": c.Pinned.Sets,
+		"gh_cidr":     sp.GhCidr,
+	}
+	dnsRules, err := RenderRuleList(c.DnsRules, target, f, vars, listVars)
+	if err != nil {
+		return nil, fmt.Errorf("dns_rules: %w", err)
+	}
+	routeRules, err := RenderRuleList(c.RouteRules, target, f, vars, listVars)
+	if err != nil {
+		return nil, fmt.Errorf("route_rules: %w", err)
+	}
+
 	return &Ctx{
 		Target: target, C: c, Sp: sp, F: f,
 		ProxyDNS: sp.ProxyDNS, Ecs: `"` + c.Ecs + `"`,
@@ -62,8 +85,10 @@ func BuildCtx(c *Config, target, dataDir string) (*Ctx, error) {
 		TunAddrs:     quotedJoin(sp.TunAddress),
 		PinnedSets:     c.Pinned.Sets,
 		PinnedOutbound: c.Pinned.Outbound,
-		RuleSetLines: ruleSetLines,
-		DataDir:      dataDir,
+		RuleSetLines:   ruleSetLines,
+		DnsRules:       dnsRules,
+		RouteRules:     routeRules,
+		DataDir:        dataDir,
 	}, nil
 }
 
@@ -347,4 +372,158 @@ func StripComments(text string) string {
 		out = append(out, l)
 	}
 	return strings.Join(out, "\n")
+}
+
+// ---------- 规则渲染（规则来自 YAML 的 dns_rules / route_rules） ----------
+
+var ruleKeyOrder = []string{
+	"type", "mode", "rules", "inbound", "protocol", "network", "port", "port_range",
+	"query_type", "ip_version", "invert", "clash_mode", "rule_set",
+	"ip_cidr", "ip_is_private", "domain", "domain_suffix", "domain_keyword", "domain_regex",
+	"action", "outbound", "server", "method", "rcode", "rewrite_ttl",
+	"match_response", "response_rcode", "client_subnet", "tag", "disable_cache",
+}
+
+func isMetaKey(k string) bool {
+	switch k {
+	case "_note", "_scope", "_if", "_for_each":
+		return true
+	}
+	return false
+}
+
+func orderedKeys(m map[string]any) []string {
+	var keys []string
+	seen := map[string]bool{}
+	for _, k := range ruleKeyOrder {
+		if _, ok := m[k]; ok {
+			keys = append(keys, k)
+			seen[k] = true
+		}
+	}
+	var rest []string
+	for k := range m {
+		if seen[k] || isMetaKey(k) {
+			continue
+		}
+		rest = append(rest, k)
+	}
+	sort.Strings(rest)
+	return append(keys, rest...)
+}
+
+func substStr(s string, vars map[string]string) string {
+	for k, v := range vars {
+		s = strings.ReplaceAll(s, "{{"+k+"}}", v)
+	}
+	return s
+}
+
+func trimVar(s string) (string, bool) {
+	if strings.HasPrefix(s, "{{") && strings.HasSuffix(s, "}}") && len(s) > 4 {
+		return s[2 : len(s)-2], true
+	}
+	return "", false
+}
+
+func substValue(v any, vars map[string]string, listVars map[string][]string) any {
+	switch t := v.(type) {
+	case string:
+		return substStr(t, vars)
+	case []any:
+		var out []any
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				if name, hit := trimVar(s); hit {
+					if lst, ok := listVars[name]; ok { // 整项替换为列表
+						for _, it := range lst {
+							out = append(out, it)
+						}
+						continue
+					}
+				}
+				out = append(out, substStr(s, vars))
+				continue
+			}
+			out = append(out, substValue(e, vars, listVars))
+		}
+		return out
+	case map[string]any:
+		m := map[string]any{}
+		for k, vv := range t {
+			m[k] = substValue(vv, vars, listVars)
+		}
+		return m
+	}
+	return v
+}
+
+func renderRuleVal(v any, indent int, vars map[string]string, listVars map[string][]string) string {
+	switch t := v.(type) {
+	case map[string]any:
+		return renderRuleObj(t, indent, vars, listVars)
+	case []any:
+		onlyScalar := true
+		for _, e := range t {
+			switch e.(type) {
+			case map[string]any, []any:
+				onlyScalar = false
+			}
+		}
+		if onlyScalar {
+			b, _ := json.Marshal(t)
+			return string(b)
+		}
+		var items []string
+		for _, e := range t {
+			items = append(items, strings.Repeat(" ", indent+2)+renderRuleVal(e, indent+2, vars, listVars))
+		}
+		return "[\n" + strings.Join(items, ",\n") + "\n" + strings.Repeat(" ", indent) + "]"
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+}
+
+func renderRuleObj(m map[string]any, indent int, vars map[string]string, listVars map[string][]string) string {
+	var lines []string
+	for _, k := range orderedKeys(m) {
+		v := substValue(m[k], vars, listVars)
+		lines = append(lines, strings.Repeat(" ", indent+2)+`"`+k+`": `+renderRuleVal(v, indent+2, vars, listVars))
+	}
+	return "{\n" + strings.Join(lines, ",\n") + "\n" + strings.Repeat(" ", indent) + "}"
+}
+
+// RenderRuleList 渲染规则数组正文（不含 [] 括号，元素已含逗号分隔与注释）
+func RenderRuleList(rules []Rule, target string, f map[string]bool, vars map[string]string, listVars map[string][]string) (string, error) {
+	var out []string
+	for _, r := range rules {
+		if sc, ok := r["_scope"].(string); ok && sc != "" && sc != target {
+			continue
+		}
+		if ifn, ok := r["_if"].(string); ok && ifn != "" && !f[ifn] {
+			continue
+		}
+		note := ""
+		if n, ok := r["_note"].(string); ok && n != "" {
+			note = "      // " + n + "\n"
+		}
+		if fe, ok := r["_for_each"].(string); ok && fe != "" {
+			items, known := listVars[fe]
+			if !known {
+				return "", fmt.Errorf("_for_each 未知列表 %q", fe)
+			}
+			for _, it := range items {
+				v2 := map[string]string{}
+				for k, vv := range vars {
+					v2[k] = vv
+				}
+				v2["item"] = it
+				out = append(out, note+renderRuleObj(r, 6, v2, listVars))
+			}
+			continue
+		}
+		out = append(out, note+renderRuleObj(r, 6, vars, listVars))
+	}
+	return strings.Join(out, ",\n"), nil
 }
