@@ -62,11 +62,18 @@ func (s *Server) Middleware(next http.Handler) http.Handler {
 func (s *Server) HandleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config", s.apiConfig)
 	mux.HandleFunc("/api/status", s.apiStatus)
+	mux.HandleFunc("/api/rules", s.apiRules)
 	mux.HandleFunc("/api/preview", s.apiPreview)
 	mux.HandleFunc("/api/push", s.apiPush)
 	mux.HandleFunc("/download/gateway", s.dlGateway)
 	mux.HandleFunc("/download/phone", s.dlPhone)
 	mux.HandleFunc("/p/", s.serveProfile)
+	mux.HandleFunc("/ui_rules.js", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := uiFS.ReadFile("ui_rules.js")
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(b)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)

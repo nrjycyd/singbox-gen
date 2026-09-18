@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-//go:embed ui.html
+//go:embed ui.html ui_rules.js
 var uiFS embed.FS
 
 func main() {

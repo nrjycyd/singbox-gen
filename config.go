@@ -41,9 +41,9 @@ type TargetSpec struct {
 }
 
 type RuleSet struct {
-	Group string `yaml:"group"` // geosite|geoip
-	Item  string `yaml:"item"`
-	Scope string `yaml:"scope"` // both|gateway|phone
+	Group string `yaml:"group" json:"group"` // geosite|geoip
+	Item  string `yaml:"item" json:"item"`
+	Scope string `yaml:"scope" json:"scope"` // both|gateway|phone
 }
 
 type Cusdom struct {

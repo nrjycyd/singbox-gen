@@ -8,29 +8,48 @@
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;height:100vh}
 header{padding:10px 16px;background:var(--panel);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 header b{font-size:15px}
-input[type=password]{width:150px;background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:5px 8px}
+input[type=password],input[type=text],input:not([type]){background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:4px 8px}
 input.bad{border-color:var(--err)}
 button{background:var(--acc);color:#0b0d10;border:0;border-radius:4px;padding:6px 14px;font:inherit;cursor:pointer}
 button.alt{background:#2c313a;color:var(--fg)}
+button.mini{background:#2c313a;color:var(--fg);padding:2px 8px;font-size:12px}
+button.mini.on{background:var(--acc);color:#0b0d10}
 #status.err{color:var(--err)}#status.ok{color:var(--ok)}#status.warn{color:var(--warn)}#status{font-size:13px}
 main{flex:1;display:flex;min-height:0}
 .pane{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid #262a31}
 .pane:last-child{border-right:0}
-.pane>h3{margin:0;padding:8px 12px;font-size:12px;color:var(--mut);background:var(--panel)}
-textarea{flex:1;background:#12141a;color:var(--fg);border:0;padding:12px;font:inherit;resize:none;white-space:pre}
+.pane>h3{margin:0;padding:8px 12px;font-size:12px;color:var(--mut);background:var(--panel);display:flex;gap:8px;align-items:center}
+textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:8px;font:inherit;resize:vertical;white-space:pre}
+#yaml{flex:1;border:0;border-radius:0;resize:none}
 #files{width:210px;overflow:auto;background:#17191e;flex:0 0 auto}
 #files div{padding:6px 10px;cursor:pointer;color:var(--mut);border-bottom:1px solid #202329}
 #files div.sel,#files div:hover{color:var(--acc);background:#1d2026}
 #content{flex:1;overflow:auto;padding:12px;margin:0;white-space:pre-wrap;word-break:break-all;font-size:13px}
 #log{height:140px;overflow:auto;background:#101216;border-top:1px solid #262a31;padding:8px 16px;font-size:13px;white-space:pre-wrap;color:var(--mut)}
 .ok{color:var(--ok)}.err{color:var(--err)}.warn{color:var(--warn)}
+#rulesView{flex:1;overflow:auto;display:none}
+#rulesRoot{padding:12px}
+.rcard{background:#1a1d23;border:1px solid #262a31;border-radius:6px;padding:10px 12px;margin-bottom:12px}
+.rcard h4{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:normal}
+.rlist{display:flex;flex-direction:column;gap:4px}
+.rrow{display:flex;gap:6px;align-items:center;background:#12141a;border:1px solid #262a31;border-radius:4px;padding:4px 8px}
+.rrow.off{opacity:.45}
+.handle{cursor:grab;color:var(--mut);user-select:none}
+.ridx{color:var(--mut);width:24px;text-align:right}
+.rsum{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rjson{width:100%;min-height:220px}
+.rf{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--mut)}
+.rf>span{color:var(--mut)}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rtabs{display:flex;gap:6px}
+.rbar{margin-top:4px}
 </style>
 </head>
 <body>
 <header>
   <b>singbox-gen</b>
-  <input id="token" type="password" placeholder="UI token（回车/输入即连接）">
-  <button onclick="saveCfg()">保存</button>
+  <input id="token" type="password" placeholder="UI token（留空则免鉴权）">
+  <button onclick="saveCfg()">保存 YAML</button>
   <button onclick="preview()">生成预览</button>
   <button class="alt" onclick="dl('gateway')">下载 网关 zip</button>
   <button class="alt" onclick="dl('phone')">下载 手机 zip</button>
@@ -42,26 +61,43 @@ textarea{flex:1;background:#12141a;color:var(--fg);border:0;padding:12px;font:in
   请编辑 homelab.yaml 填入真实节点/凭据/ECS，或把真实配置覆盖到 data/homelab.yaml 后重启容器。
 </div>
 <main>
-  <section class="pane" style="flex:5">
-    <h3>homelab.yaml（唯一事实源）</h3>
+  <section class="pane" style="flex:4">
+    <h3>homelab.yaml（单一事实源）</h3>
     <textarea id="yaml" spellcheck="false"></textarea>
   </section>
-  <section class="pane" style="flex:6">
-    <h3>产物预览</h3>
-    <div style="display:flex;flex:1;min-height:0">
+  <section class="pane" style="flex:7">
+    <h3>
+      <span class="rtabs">
+        <button id="tabP" class="mini on" onclick="switchTab('preview')">产物预览</button>
+        <button id="tabR" class="mini" onclick="switchTab('rules')">规则编辑</button>
+      </span>
+    </h3>
+    <div id="previewView" style="display:flex;flex:1;min-height:0">
       <div id="files"></div>
       <pre id="content"></pre>
     </div>
+    <div id="rulesView"><div id="rulesRoot"></div></div>
   </section>
 </main>
 <div id="log"></div>
 <script>
 const $=s=>document.querySelector(s);
+window.$=$;
 let files={};
 let noAuth=false;
 function tok(){return $('#token').value.trim()}
+window.sgenTok=tok;
 function setStatus(t,cls){const e=$('#status');e.textContent=t||'';e.className=cls||''}
 function log(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent='['+new Date().toLocaleTimeString()+'] '+t;$('#log').append(d);$('#log').scrollTop=1e9}
+window.sgenStatus=setStatus;window.sgenLog=log;
+function switchTab(v){
+  const p=v!=='rules';
+  $('#previewView').style.display=p?'flex':'none';
+  $('#rulesView').style.display=p?'none':'block';
+  $('#tabP').classList.toggle('on',p);$('#tabR').classList.toggle('on',!p);
+  if(!p&&window.rulesInit)window.rulesInit();
+}
+window.switchTab=switchTab;
 function noTok(){if(noAuth||tok())return false;setStatus('请先填写 UI token','warn');$('#token').classList.add('bad');$('#token').focus();log('未填写 token：见部署目录 data/homelab.yaml 的 secret.ui_token（留空则免鉴权）','warn');return true}
 async function api(path,opts){
   opts=opts||{};opts.headers=Object.assign({'X-Token':tok()},opts.headers||{});
@@ -75,10 +111,10 @@ async function loadCfg(){
     const r=await api('/api/config');
     $('#yaml').value=await r.text();
     $('#token').classList.remove('bad');
-    setStatus('已连接','ok');
-    log('已加载配置（来自 /data/homelab.yaml）','ok');
+    if(!noAuth)setStatus('已连接','ok');
   }catch(e){log(e.message||String(e),'err')}
 }
+window.sgenReloadYaml=loadCfg;
 async function saveCfg(){
   if(noTok())return;
   try{
@@ -100,6 +136,7 @@ async function preview(){
     const box=$('#files');box.innerHTML='';
     Object.keys(files).sort().forEach(n=>{const d=document.createElement('div');d.textContent=n;d.onclick=()=>{const s=box.querySelector('.sel');if(s)s.classList.remove('sel');d.classList.add('sel');$('#content').textContent=files[n]};box.append(d)});
     const first=box.firstChild;if(first)first.click();
+    if($('#previewView').style.display==='none')switchTab('preview');
     setStatus('预览 OK（'+Object.keys(files).length+' 个文件）','ok');log('预览生成成功','ok');
   }catch(e){setStatus('生成失败','err');log(e.message||String(e),'err')}
 }
@@ -133,5 +170,6 @@ fetch('/api/status').then(r=>r.json()).then(j=>{
 }).catch(()=>{});
 loadCfg();
 </script>
+<script src="/ui_rules.js"></script>
 </body>
 </html>
