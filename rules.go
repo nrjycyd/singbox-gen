@@ -322,31 +322,6 @@ func (s *Server) apiModules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		jsonOut(w, map[string]bool{"ok": true})
-	case http.MethodDelete:
-		target := r.URL.Query().Get("target")
-		module := r.URL.Query().Get("module")
-		err = s.mutateConfig(func(root *yaml.Node) error {
-			ext := findValue(root, "extra")
-			if ext == nil {
-				return nil
-			}
-			tm := findValue(ext, target)
-			if tm == nil || tm.Kind != yaml.MappingNode {
-				return nil
-			}
-			for i := 0; i+1 < len(tm.Content); i += 2 {
-				if tm.Content[i].Value == module {
-					tm.Content = append(tm.Content[:i], tm.Content[i+2:]...)
-					return nil
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			errOut(w, 400, err.Error())
-			return
-		}
-		jsonOut(w, map[string]bool{"ok": true})
 	default:
 		errOut(w, 405, "method")
 	}
@@ -496,6 +471,31 @@ func (s *Server) apiExtra(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		jsonOut(w, map[string]bool{"ok": true})
+	case http.MethodDelete:
+		// 删除 extra 覆盖，恢复由生成器产出
+		target := r.URL.Query().Get("target")
+		module := r.URL.Query().Get("module")
+		if err := s.mutateConfig(func(root *yaml.Node) error {
+			ext := findValue(root, "extra")
+			if ext == nil {
+				return nil
+			}
+			tm := findValue(ext, target)
+			if tm == nil || tm.Kind != yaml.MappingNode {
+				return nil
+			}
+			for i := 0; i+1 < len(tm.Content); i += 2 {
+				if tm.Content[i].Value == module {
+					tm.Content = append(tm.Content[:i], tm.Content[i+2:]...)
+					return nil
+				}
+			}
+			return nil
+		}); err != nil {
 			errOut(w, 400, err.Error())
 			return
 		}
