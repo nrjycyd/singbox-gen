@@ -315,7 +315,11 @@
   async function load() {
     try {
       const r = await fetch('/api/rules', { cache: 'no-store' });
-      if (!r.ok) { window.sgenLog('规则加载失败: ' + r.status, 'err'); return; }
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        window.sgenLog('规则加载失败: ' + (j.error || r.status), 'err');
+        return;
+      }
       doc = await r.json();
       doc.rule_sets = doc.rule_sets || []; doc.dns_rules = doc.dns_rules || []; doc.route_rules = doc.route_rules || [];
       open = null; render();

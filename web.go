@@ -65,9 +65,9 @@ func (s *Server) HandleRoutes(mux *http.ServeMux) {
 func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		b, err := os.ReadFile(s.dataDir + "/homelab.yaml")
+		c, err := s.loadCfg()
 		if err != nil {
-			errOut(w, 500, err.Error())
+			errOut(w, 500, fmt.Sprintf("配置加载失败（%s/homelab.yaml）: %v", s.dataDir, err))
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

@@ -104,5 +104,13 @@ func (s *Server) spliceRules(doc RulesDoc) error {
 	if err := enc.Close(); err != nil {
 		return err
 	}
+	// 写入前干跑一遍完整加载校验：避免写出"节点合法但类型化解码失败"的配置
+	if _, err := LoadConfig2(buf.String()); err != nil {
+		return fmt.Errorf("拒绝写入：生成结果无法加载（已保留原文件）: %w", err)
+	}
+	// 保留上一版可用配置，便于回滚
+	if err := os.WriteFile(path+".bak", b, 0600); err != nil {
+		return fmt.Errorf("备份失败: %w", err)
+	}
 	return os.WriteFile(path, buf.Bytes(), 0600)
 }
