@@ -43,6 +43,23 @@ textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radi
 .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .rtabs{display:flex;gap:6px}
 .rbar{margin-top:4px}
+.board{display:grid;grid-template-columns:1fr}
+.rchead{display:grid;grid-template-columns:20px 34px 1fr 1fr;gap:6px;color:var(--mut);font-size:12px;padding:2px 6px}
+.rrow2{display:grid;grid-template-columns:20px 34px 1fr 1fr;gap:6px;align-items:start;background:#12141a;border:1px solid #262a31;border-radius:4px;padding:4px 6px;margin-bottom:4px}
+.rrow2.hl{border-color:var(--acc)}
+.rgrp{color:var(--mut);font-size:12px;padding-top:3px;text-align:center}
+.rcell{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-height:22px}
+.chip{display:inline-flex;gap:4px;align-items:center;background:#1d2026;border:1px solid #2c313a;border-radius:10px;padding:1px 6px;font-size:12px}
+.chip.hl{border-color:var(--acc)}
+.chip.warn{border-color:var(--warn);color:var(--warn)}
+.chip b{font-weight:normal;cursor:pointer}
+.chip .x{color:var(--mut);cursor:pointer}
+.chip .x:hover{color:var(--acc)}
+.rempty{color:#3a3f47;font-size:12px}
+.rslabel{cursor:pointer;color:var(--mut)}
+.rslabel.on{color:#0b0d10;background:var(--acc);border-radius:3px;padding:0 4px}
+.editor{grid-column:1 / -1;background:#1a1d23;border:1px solid #2c313a;border-radius:4px;padding:8px;margin-top:4px}
+.editor h4{margin:0 0 6px;font-size:12px;color:var(--mut);font-weight:normal}
 </style>
 </head>
 <body>

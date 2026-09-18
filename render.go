@@ -386,7 +386,7 @@ var ruleKeyOrder = []string{
 
 func isMetaKey(k string) bool {
 	switch k {
-	case "_note", "_scope", "_if", "_for_each":
+	case "_note", "_scope", "_if", "_for_each", "_group":
 		return true
 	}
 	return false

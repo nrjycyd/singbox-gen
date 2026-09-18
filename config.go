@@ -133,7 +133,8 @@ type PushSpec struct {
 }
 
 // Rule: 一条分流规则。除元键外，所有键原样进入 sing-box 规则对象。
-// 元键：_note 注释 | _scope both|gateway|phone | _if 策略开关名 | _for_each 列表名（pinned_sets）
+// 元键：_note 注释 | _group 步骤编号（UI 配对/联动排序） | _scope both|gateway|phone
+//       _if 策略开关名 | _for_each 列表名（pinned_sets）
 // 字符串值支持变量：{{proxy_dns}} {{local_dns}} {{remote_dns}} {{ecs}} {{pinned_outbound}} {{item}}
 // 列表值支持整项替换：["{{gh_cidr}}"] → 展开为目标端的 gh 网段列表
 type Rule map[string]any

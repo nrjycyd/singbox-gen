@@ -68,14 +68,17 @@ rule_sets:
 
 # ============ 分流规则（顺序即优先级，首条命中即停）============
 # 元键：_note 注释 | _scope both|gateway|phone | _if 策略开关 | _for_each 列表循环
+#      _group 步骤编号（UI 配对与联动排序：同号的两侧规则显示在同一行，如 0 前置 / 1 / clash / 8b / 9 收尾）
 # 变量：{{proxy_dns}} {{local_dns}} {{remote_dns}} {{ecs}} {{pinned_outbound}} {{item}}
 # 变量可整项展开列表：ip_cidr: ["{{gh_cidr}}"]
 dns_rules:
   - _note: 拦截特殊查询类型（SOA/PTR/HTTPS/SVCB），返回空 NOERROR
+    _group: "0"
     query_type: [SOA, PTR, HTTPS, SVCB]
     action: predefined
     rcode: NOERROR
   - _note: 只允许 A/AAAA 查询，其余类型一律拒绝
+    _group: "0"
     query_type: [A, AAAA]
     invert: true
     action: reject
@@ -84,11 +87,13 @@ dns_rules:
     action: route
     server: "{{local_dns}}"
   - _note: "Clash 模式：直连 → 本地/系统 DNS"
+    _group: "clash"
     _if: clash
     clash_mode: Direct
     action: route
     server: "{{local_dns}}"
   - _note: "Clash 模式：全局 → 代理 DNS（防泄漏）"
+    _group: "clash"
     _if: clash
     clash_mode: Global
     action: route
@@ -150,41 +155,50 @@ dns_rules:
     rule_set: [geoip-cn]
     action: respond
   - _note: 8b 解析不出真实 IP（NXDOMAIN）→ 直接回 NXDOMAIN，不 fakeip 化
+    _group: "9"
     _scope: gateway
     match_response: true
     response_rcode: NXDOMAIN
     action: predefined
     rcode: NXDOMAIN
   - _note: 国外域名（fake-in 查询）→ fakeip，连接时映射回域名走代理
+    _group: "9"
     _scope: gateway
     inbound: fake-in
     action: route
     server: "{{proxy_dns}}"
     rewrite_ttl: 1
   - _note: 兜底响应（手机端：直接返回远端解析结果）
+    _group: "9"
     _scope: phone
     action: respond
 
 route_rules:
   - _note: fake-in 入站的 DNS 劫持
+    _group: "0"
     _scope: gateway
     inbound: fake-in
     action: hijack-dns
   - _note: 域名嗅探（取 SNI，供规则匹配）
+    _group: "0"
     action: sniff
   - _note: 手机端：劫持 DNS 流量
+    _group: "0"
     _scope: phone
     protocol: dns
     action: hijack-dns
   - _note: 公共 DNS 走代理，防 DNS 泄漏
+    _group: "0"
     ip_cidr: [1.1.1.1/32, 1.0.0.1/32, 8.8.8.8/32, 8.8.4.4/32, "2001:4860:4860::8888/128", "2001:4860:4860::8844/128", "2606:4700:4700::1111/128", "2606:4700:4700::1001/128"]
     action: route
     outbound: proxy
   - _note: 阿里 DNS 直连
+    _group: "0"
     ip_cidr: [223.5.5.5/32, 223.6.6.6/32]
     action: route
     outbound: direct
   - _note: 拒 DoT / UDP443(QUIC) / STUN
+    _group: "0"
     type: logical
     mode: or
     rules:
@@ -195,11 +209,13 @@ route_rules:
     action: reject
     method: drop
   - _note: 特判网段 → 走 gh
+    _group: "0"
     _if: gh
     ip_cidr: ["{{gh_cidr}}"]
     action: route
     outbound: gh
   - _note: 私网地址直连
+    _group: "0"
     ip_is_private: true
     action: route
     outbound: direct
@@ -208,11 +224,13 @@ route_rules:
     action: route
     outbound: direct
   - _note: "Clash 模式：直连 → 其余流量全部直连"
+    _group: "clash"
     _if: clash
     clash_mode: Direct
     action: route
     outbound: direct
   - _note: "Clash 模式：全局 → 其余流量走节点选择器"
+    _group: "clash"
     _if: clash
     clash_mode: Global
     action: route
