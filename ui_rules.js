@@ -189,7 +189,7 @@
       const [x] = cur.splice(from, 1); cur.splice(to, 0, x);
       dragKey = null; applyOrder(cur);
     };
-    r.append(el('span', 'handle', '⋮⋮'), el('span', 'rgrp', row.group || '—'));
+    r.append(el('span', 'handle', '⋮⋮'), el('span', 'rgrp', '#' + (rows.indexOf(row) + 1) + (row.group ? ' ' + row.group : '')));
     r.append(renderCell(row, 'dns'), renderCell(row, 'route'));
     if (open && ((open.side === 'dns_rules' && row.dns.indexOf(open.index) >= 0) || (open.side === 'route_rules' && row.route.indexOf(open.index) >= 0))) {
       const side = open.side === 'dns_rules' ? 'dns' : 'route';

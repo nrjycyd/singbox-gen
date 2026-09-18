@@ -32,6 +32,8 @@ type Ctx struct {
 	RouteExtra     string
 	ApiPort        int
 	Vars           map[string]any
+	DnsSteps       []int
+	RouteSteps     []int
 	DataDir        string
 }
 
@@ -74,11 +76,12 @@ func BuildCtx(c *Config, target, mode, dataDir string) (*Ctx, error) {
 		"pinned_sets": c.Pinned.Sets,
 		"gh_cidr":     sp.GhCidr,
 	}
-	dnsRules, err := RenderRuleList(c.DnsRules, target, f, vars, listVars)
+	dnsSteps, routeSteps := c.StepNumbers()
+	dnsRules, err := RenderRuleList(c.DnsRules, target, f, vars, listVars, dnsSteps)
 	if err != nil {
 		return nil, fmt.Errorf("dns_rules: %w", err)
 	}
-	routeRules, err := RenderRuleList(c.RouteRules, target, f, vars, listVars)
+	routeRules, err := RenderRuleList(c.RouteRules, target, f, vars, listVars, routeSteps)
 	if err != nil {
 		return nil, fmt.Errorf("route_rules: %w", err)
 	}
@@ -105,6 +108,8 @@ func BuildCtx(c *Config, target, mode, dataDir string) (*Ctx, error) {
 		RouteExtra:     routeExtra,
 		ApiPort:        c.SFL.Ports.API,
 		Vars:           vars,
+		DnsSteps:       dnsSteps,
+		RouteSteps:     routeSteps,
 		DataDir:        dataDir,
 	}, nil
 }
@@ -640,9 +645,10 @@ func renderObj(m map[string]any, indent int, order []string, vars map[string]any
 }
 
 // RenderRuleList 渲染规则数组正文（不含 [] 括号，元素已含逗号分隔与注释）
-func RenderRuleList(rules []Rule, target string, f map[string]bool, vars map[string]any, listVars map[string][]string) (string, error) {
+// steps：每条规则对应的"步骤行序号"（-1 表示无），注释编号由生成器重写，忽略 _note 中手写的开头编号
+func RenderRuleList(rules []Rule, target string, f map[string]bool, vars map[string]any, listVars map[string][]string, steps []int) (string, error) {
 	var out []string
-	for _, r := range rules {
+	for i, r := range rules {
 		if sc, ok := r["_scope"].(string); ok && !ScopeMatch(sc, target) {
 			continue
 		}
@@ -651,7 +657,15 @@ func RenderRuleList(rules []Rule, target string, f map[string]bool, vars map[str
 		}
 		note := ""
 		if n, ok := r["_note"].(string); ok && n != "" {
-			note = "      // " + n + "\n"
+			txt := stripLeadingNum(n)
+			if i < len(steps) && steps[i] > 0 {
+				prefix := fmt.Sprintf("%d", steps[i])
+				if g, _ := r["_group"].(string); strings.TrimSpace(g) != "" && strings.TrimSpace(g) != prefix {
+					prefix = prefix + " (组" + strings.TrimSpace(g) + ")"
+				}
+				txt = prefix + " " + txt
+			}
+			note = "      // " + txt + "\n"
 		}
 		if fe, ok := r["_for_each"].(string); ok && fe != "" {
 			items, known := listVars[fe]
@@ -671,4 +685,144 @@ func RenderRuleList(rules []Rule, target string, f map[string]bool, vars map[str
 		out = append(out, note+renderObj(r, 6, ruleKeyOrder, vars, listVars))
 	}
 	return strings.Join(out, ",\n"), nil
+}
+
+// ---------- 步骤行序号（与 UI"行=步骤"算法一致；DNS/Route 同号配对） ----------
+
+// ruleGroup：_group 优先，其次 _note 前缀编号（如 "2b xxx" → "2b"）
+func ruleGroup(r Rule) string {
+	if v, ok := r["_group"].(string); ok && strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
+	}
+	n, _ := r["_note"].(string)
+	return leadNum(n)
+}
+
+func leadNum(s string) string {
+	s = strings.TrimSpace(s)
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return ""
+	}
+	if i < len(s) && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z')) {
+		i++
+	}
+	return strings.ToLower(s[:i])
+}
+
+func stripLeadingNum(s string) string {
+	s = strings.TrimSpace(s)
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i < len(s) && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z')) {
+		i++
+	}
+	if i > 0 && (i >= len(s) || s[i] == ' ' || s[i] == '\t') {
+		return strings.TrimSpace(s[i:])
+	}
+	return s
+}
+
+type ruleItem struct {
+	key   string
+	group string
+	side  string
+	idx   int
+	zone  string
+}
+
+// StepNumbers：返回 dns/route 每条规则的"行序号"（1 起；与界面显示顺序一致）
+func (c *Config) StepNumbers() ([]int, []int) {
+	dns, rts := c.DnsRules, c.RouteRules
+	groupOrder := []string{}
+	seen := map[string]bool{}
+	scan := func(arr []Rule) {
+		for _, r := range arr {
+			g := ruleGroup(r)
+			if g != "" && !seen[g] {
+				seen[g] = true
+				groupOrder = append(groupOrder, g)
+			}
+		}
+	}
+	scan(dns)
+	scan(rts)
+	zoneOf := func(arr []Rule, i int) string {
+		for k := i + 1; k < len(arr); k++ {
+			if g := ruleGroup(arr[k]); g != "" {
+				return g
+			}
+		}
+		return "@end"
+	}
+	items := []ruleItem{}
+	for i, r := range dns {
+		g := ruleGroup(r)
+		z := g
+		if z == "" {
+			z = zoneOf(dns, i)
+		}
+		items = append(items, ruleItem{key: g, group: g, side: "dns", idx: i, zone: z})
+		if g == "" {
+			items[len(items)-1].key = fmt.Sprintf("@dns%d", i)
+		}
+	}
+	for i, r := range rts {
+		g := ruleGroup(r)
+		z := g
+		if z == "" {
+			z = zoneOf(rts, i)
+		}
+		items = append(items, ruleItem{key: g, group: g, side: "route", idx: i, zone: z})
+		if g == "" {
+			items[len(items)-1].key = fmt.Sprintf("@route%d", i)
+		}
+	}
+	zIdx := func(z string) int {
+		if z == "@end" {
+			return len(groupOrder) + 1
+		}
+		for i, g := range groupOrder {
+			if g == z {
+				return i
+			}
+		}
+		return len(groupOrder) + 1
+	}
+	sort.SliceStable(items, func(a, b int) bool {
+		x, y := items[a], items[b]
+		zx, zy := zIdx(x.zone), zIdx(y.zone)
+		if zx != zy {
+			return zx < zy
+		}
+		gx, gy := x.group == "", y.group == ""
+		if gx != gy {
+			return gx // 未分组（前置规则）排在本组之前
+		}
+		if x.side != y.side {
+			return x.side == "dns"
+		}
+		return x.idx < y.idx
+	})
+	dnsSteps := make([]int, len(dns))
+	routeSteps := make([]int, len(rts))
+	rowNum := 0
+	prevKey := ""
+	for _, it := range items {
+		if it.key != prevKey {
+			rowNum++
+			prevKey = it.key
+		}
+		if it.side == "dns" {
+			dnsSteps[it.idx] = rowNum
+		} else {
+			routeSteps[it.idx] = rowNum
+		}
+	}
+	return dnsSteps, routeSteps
 }
