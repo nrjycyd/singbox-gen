@@ -399,6 +399,11 @@ func renderModule(c *Config, t *template.Template, ctx *Ctx, name string) (strin
 	if !c.ModuleEnabled(ctx.Target, name) {
 		return "", false, nil
 	}
+	// extra 覆盖优先（内置模块亦适用）：一旦提供内容，即替代生成结果
+	if v, ok := c.ExtraOf(ctx.Target, name); ok {
+		body := renderVal(substAny(v, ctx.Vars, nil), 2, moduleKeyOrder, ctx.Vars, nil)
+		return `"` + name + `": ` + body, true, nil
+	}
 	switch name {
 	case "log":
 		b, err := execTmpl(t, "b00", ctx); return b, true, err
@@ -420,13 +425,7 @@ func renderModule(c *Config, t *template.Template, ctx *Ctx, name string) (strin
 		}
 		b, err := execTmpl(t, "b07", ctx); return b, true, err
 	}
-	// 非建模模块：extra 原样透传
-	v, ok := c.ExtraOf(ctx.Target, name)
-	if !ok {
-		return "", false, fmt.Errorf("模块 %s 已启用但无内容：请在 YAML 写入 extra.%s.%s", name, ctx.Target, name)
-	}
-	body := renderVal(substAny(v, ctx.Vars, nil), 2, moduleKeyOrder, ctx.Vars, nil)
-	return `"` + name + `": ` + body, true, nil
+	return "", false, fmt.Errorf("模块 %s 无内容：请在 YAML 写入 extra.%s.%s", name, ctx.Target, name)
 }
 
 // RenderSFL 生成 SFL 某一模式的产物（conf 目录内容）

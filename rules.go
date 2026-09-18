@@ -322,12 +322,101 @@ func (s *Server) apiModules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		jsonOut(w, map[string]bool{"ok": true})
+	case http.MethodDelete:
+		target := r.URL.Query().Get("target")
+		module := r.URL.Query().Get("module")
+		err = s.mutateConfig(func(root *yaml.Node) error {
+			ext := findValue(root, "extra")
+			if ext == nil {
+				return nil
+			}
+			tm := findValue(ext, target)
+			if tm == nil || tm.Kind != yaml.MappingNode {
+				return nil
+			}
+			for i := 0; i+1 < len(tm.Content); i += 2 {
+				if tm.Content[i].Value == module {
+					tm.Content = append(tm.Content[:i], tm.Content[i+2:]...)
+					return nil
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		jsonOut(w, map[string]bool{"ok": true})
 	default:
 		errOut(w, 405, "method")
 	}
 }
 
-// apiExtra：读取/写入非建模模块的原样内容（extra.<target>.<module>）
+// apiModule：读取某模块"当前生效内容"（extra 覆盖优先，否则回退生成结果）
+func (s *Server) apiModule(w http.ResponseWriter, r *http.Request) {
+	c, err := s.loadCfg()
+	if err != nil {
+		errOut(w, 500, fmt.Sprintf("配置加载失败（%s/homelab.yaml）: %v", s.dataDir, err))
+		return
+	}
+	target := r.URL.Query().Get("target")
+	module := r.URL.Query().Get("module")
+	mode := r.URL.Query().Get("mode")
+	known := false
+	for _, m := range AllModules {
+		if m == module {
+			known = true
+		}
+	}
+	okTarget := false
+	for _, t := range AllTargets {
+		if t == target {
+			okTarget = true
+		}
+	}
+	if !known || !okTarget {
+		errOut(w, 400, "需要合法 target + module")
+		return
+	}
+	if v, ok := c.ExtraOf(target, module); ok {
+		jsonOut(w, map[string]any{"target": target, "module": module, "source": "extra", "content": v})
+		return
+	}
+	if !builtinModules[module] {
+		jsonOut(w, map[string]any{"target": target, "module": module, "source": "none", "content": nil})
+		return
+	}
+	if target == TgtSFL && mode == "" {
+		mode = c.SFL.DefaultMode
+	}
+	t, err := loadTemplates()
+	if err != nil {
+		errOut(w, 500, err.Error())
+		return
+	}
+	ctx, err := BuildCtx(c, target, mode, s.dataDir)
+	if err != nil {
+		errOut(w, 400, err.Error())
+		return
+	}
+	body, ok, err := renderModule(c, t, ctx, module)
+	if err != nil {
+		errOut(w, 400, err.Error())
+		return
+	}
+	if !ok {
+		errOut(w, 400, "模块未启用: "+module)
+		return
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(StripComments("{"+body+"}")), &m); err != nil {
+		errOut(w, 500, "生成结果解析失败: "+err.Error())
+		return
+	}
+	jsonOut(w, map[string]any{"target": target, "module": module, "source": "generated", "mode": mode, "content": m[module]})
+}
+
+// apiExtra：读取/写入模块的原样内容（extra.<target>.<module>）
 func (s *Server) apiExtra(w http.ResponseWriter, r *http.Request) {
 	c, err := s.loadCfg()
 	if err != nil {
@@ -379,10 +468,6 @@ func (s *Server) apiExtra(w http.ResponseWriter, r *http.Request) {
 		}
 		if !known || !okTarget {
 			errOut(w, 400, "需要合法 target + module")
-			return
-		}
-		if builtinModules[req.Module] {
-			errOut(w, 400, "模块 "+req.Module+" 为内置模块，内容由 YAML 结构化字段生成（不支持 extra 编辑）")
 			return
 		}
 		if req.Content == nil {

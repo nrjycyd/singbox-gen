@@ -241,8 +241,7 @@ function renderModules(){
     const tag=document.createElement('span'); tag.className='tag';
     tag.textContent=mi.builtin?'内置':(mi.has_content?'extra':'无内容');
     const ed=document.createElement('button'); ed.className='mini'; ed.textContent='编辑';
-    ed.disabled=mi.builtin;
-    if(mi.builtin)ed.title='内置模块内容来自 YAML 结构化字段';
+    ed.title=mi.builtin?'编辑当前生成内容（保存后将用 extra 覆盖生成结果，可一键恢复）':'编辑 extra 内容';
     ed.onclick=()=>openExtra(mi.name);
     row.append(cb,n,tag,ed); box.append(row);
   });
@@ -273,18 +272,29 @@ const KEYHINTS={
   endpoints:['type','tag','system','name','mtu','address','private_key','listen_port','peers','detour']
 };
 function parseVal(v){try{return JSON.parse(v)}catch(e){return v}}
+function modInfo(name){
+  const t=$('#modTarget').value||'SFL';
+  return (((modData.targets||{})[t]||[]).find(x=>x.name===name))||{};
+}
 function openExtra(module){
   const t=$('#modTarget').value||'SFL';
-  extra={target:t,module:module,content:null,open:true};
-  api('/api/extra?target='+encodeURIComponent(t)+'&module='+encodeURIComponent(module))
-    .then(r=>r.json().then(j=>({ok:r.ok,j})))
-    .then(({ok,j})=>{
-      if(!ok)throw new Error(j.error||'读取失败');
-      extra.content = j.has ? j.content : ((TEMPLATES[module]!==undefined)?JSON.parse(JSON.stringify(TEMPLATES[module])):(ARRAY_MODULES.includes(module)?[]:{}));
+  const mi=modInfo(module);
+  extra={target:t,module:module,content:null,open:true,source:'',builtin:!!mi.builtin,mode:(t==='SFL'?state.SFL.mode:'')};
+  const url=mi.builtin
+    ? ('/api/module?target='+encodeURIComponent(t)+'&module='+encodeURIComponent(module)+(t==='SFL'?('&mode='+encodeURIComponent(state.SFL.mode)):''))
+    : ('/api/extra?target='+encodeURIComponent(t)+'&module='+encodeURIComponent(module));
+  api(url).then(r=>r.json().then(j=>({ok:r.ok,j}))).then(({ok,j})=>{
+    if(!ok)throw new Error(j.error||'读取失败');
+    if(mi.builtin){
+      extra.source=j.source||'generated';
+      extra.content=j.content!==null&&j.content!==undefined?j.content:{};
+    }else{
+      extra.source=j.has?'extra':'none';
+      extra.content=j.has?j.content:((TEMPLATES[module]!==undefined)?JSON.parse(JSON.stringify(TEMPLATES[module])):(ARRAY_MODULES.includes(module)?[]:{}));
       if(!j.has&&TEMPLATES[module]!==undefined)window.sgenLog('已填入 '+module+' 默认模板，请修改后保存','warn');
-      renderExtra();
-    })
-    .catch(e=>{log('读取 extra 失败: '+(e.message||e),'err'); renderExtra()});
+    }
+    renderExtra();
+  }).catch(e=>{log('读取模块内容失败: '+(e.message||e),'err'); renderExtra()});
 }
 function closeExtra(){extra.open=false;renderExtra()}
 function renderExtra(){
@@ -293,8 +303,32 @@ function renderExtra(){
   const card=document.createElement('div'); card.className='rcard';
   const isArr=Array.isArray(extra.content);
   const h=document.createElement('h4');
-  h.textContent='extra.'+extra.target+'.'+extra.module+(isArr?'（数组，可拖动排序）':'（对象）');
+  const srcTxt=extra.builtin
+    ? (extra.source==='extra'?'来源：extra 覆盖（生成结果已被替代）':'来源：生成结果（保存后将写入 extra 覆盖）')
+    : 'extra.'+extra.target+'.'+extra.module;
+  h.textContent=extra.module+(isArr?'（数组，可拖动排序）':'（对象）')+'　—　'+srcTxt;
   card.append(h);
+  if(extra.builtin){
+    const tip=document.createElement('div'); tip.style.cssText='font-size:11px;color:var(--warn);margin-bottom:6px';
+    tip.textContent = extra.module==='inbounds'&&extra.target==='SFL'
+      ? '⚠ SFL 的 inbounds 按模式生成；用 extra 覆盖会让 tun/ebpf/tproxy 三模式共用同一份入站配置。如需模式差异，请直接编辑 YAML 的 SFL.modes。'
+      : '⚠ 保存后该模块不再由结构化字段（节点/端口/规则等）生成，改为使用本处内容。';
+    card.append(tip);
+  }
+  if(extra.source==='extra'){
+    const rs=document.createElement('button'); rs.className='mini'; rs.textContent='恢复生成（删除 extra 覆盖）';
+    rs.onclick=async()=>{
+      if(!confirm('删除 extra.'+extra.target+'.'+extra.module+' 的覆盖，恢复由生成器产出？'))return;
+      try{
+        const r=await api('/api/extra?target='+encodeURIComponent(extra.target)+'&module='+encodeURIComponent(extra.module),{method:'DELETE'});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok)throw new Error(j.error||r.status);
+        window.sgenLog('已恢复生成：'+extra.module,'ok');
+        await loadModules(); loadTarget(extra.target); closeExtra();
+      }catch(e){log('恢复失败: '+(e.message||e),'err')}
+    };
+    card.append(rs);
+  }
   const dl=document.createElement('datalist'); dl.id='kh_'+extra.module;
   (KEYHINTS[extra.module]||[]).forEach(k=>{const o=document.createElement('option');o.value=k;dl.append(o)});
   card.append(dl);
