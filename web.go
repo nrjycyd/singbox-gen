@@ -65,9 +65,10 @@ func (s *Server) HandleRoutes(mux *http.ServeMux) {
 func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		c, err := s.loadCfg()
+		// 直接回原文件文本（保留注释），不做重排
+		b, err := os.ReadFile(s.dataDir + "/homelab.yaml")
 		if err != nil {
-			errOut(w, 500, fmt.Sprintf("配置加载失败（%s/homelab.yaml）: %v", s.dataDir, err))
+			errOut(w, 500, fmt.Sprintf("读取配置失败（%s/homelab.yaml）: %v", s.dataDir, err))
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
