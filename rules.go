@@ -72,10 +72,16 @@ func (s *Server) spliceRules(doc RulesDoc) error {
 		if err := n.Encode(v); err != nil {
 			return fmt.Errorf("%s 编码失败: %w", key, err)
 		}
-		if len(n.Content) == 0 {
-			return fmt.Errorf("%s 编码结果为空", key)
+		// Node.Encode 的结果本身即值节点；若被包成 Document，则取唯一子节点
+		val := n
+		if n.Kind == yaml.DocumentNode && len(n.Content) == 1 {
+			val = n.Content[0]
 		}
-		val := n.Content[0]
+		switch val.Kind {
+		case yaml.SequenceNode, yaml.MappingNode, yaml.ScalarNode:
+		default:
+			return fmt.Errorf("%s 编码结果异常（kind=%d，期望序列/映射/标量）", key, val.Kind)
+		}
 		for i := 0; i+1 < len(m.Content); i += 2 {
 			if m.Content[i].Value == key {
 				m.Content[i+1] = val // 只换值节点，键节点的注释保留

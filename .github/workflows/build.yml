@@ -36,7 +36,14 @@ jobs:
           # 网关端同样走渲染 + 校验（含 pinned 块）
           curl -fsS "http://127.0.0.1:18090/download/gateway" -o /tmp/gw.zip
           test -s /tmp/gw.zip && echo "gateway render OK ($(stat -c%s /tmp/gw.zip) bytes)"
-          curl -fsS http://127.0.0.1:18090/api/status
+          curl -fsS http://127.0.0.1:18090/api/status; echo
+          # 规则保存链路：GET → PUT 原样回写 → 再 GET 必须一致（覆盖 yaml.Node 定点替换）
+          curl -fsS http://127.0.0.1:18090/api/rules -o /tmp/rules1.json
+          curl -fsS -X PUT http://127.0.0.1:18090/api/rules \
+            -H "Content-Type: application/json" --data-binary @/tmp/rules1.json -o /tmp/put.out
+          cat /tmp/put.out
+          curl -fsS http://127.0.0.1:18090/api/rules -o /tmp/rules2.json
+          cmp /tmp/rules1.json /tmp/rules2.json && echo "rules PUT round-trip OK"
           curl -fsS http://127.0.0.1:18090/ >/dev/null && echo "bootstrap + render OK"
       - uses: actions/upload-artifact@v4
         with:
