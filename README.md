@@ -60,6 +60,8 @@ docker compose restart
 
    > **鉴权模型**：`secret.ui_token` **留空 = 内网免鉴权**（示例配置默认如此，UI 会自动隐藏 token 输入框）；
    > 填入任意字符串则 `/api/*` 与下载接口需 `X-Token`。手机订阅 URL 由 `secret.profile_token` 独立保护。
+   > 忘记 token 时：直接编辑部署目录的 `data/homelab.yaml` 清空该字段（配置实时读取，无需重启），
+   > 或查看该文件里的现值登录后在 UI 内改。
 
 ## 手机订阅
 

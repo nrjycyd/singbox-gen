@@ -117,7 +117,7 @@ function switchTab(v){
 window.switchTab=switchTab;
 function noTok(){if(noAuth||tok())return false;setStatus('请先填写 UI token','warn');$('#token').classList.add('bad');$('#token').focus();log('未填写 token：见部署目录 data/homelab.yaml 的 secret.ui_token（留空则免鉴权）','warn');return true}
 async function api(path,opts){
-  opts=opts||{};opts.headers=Object.assign({'X-Token':tok()},opts.headers||{});
+  opts=opts||{};opts.cache='no-store';opts.headers=Object.assign({'X-Token':tok()},opts.headers||{});
   const r=await fetch(path,opts);
   if(r.status===401){setStatus('token 不正确','err');$('#token').classList.add('bad');throw new Error('token 不正确（data/homelab.yaml → secret.ui_token；留空可关闭鉴权）')}
   return r;
@@ -181,9 +181,14 @@ $('#token').addEventListener('input',()=>{
   clearTimeout(t);t=setTimeout(()=>{if(tok())loadCfg()},600);
 });
 $('#token').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(t);loadCfg()}});
-fetch('/api/status').then(r=>r.json()).then(j=>{
+fetch('/api/status', { cache: 'no-store' }).then(r=>r.json()).then(j=>{
   if(j.sample)$('#banner').style.display='block';
-  if(j.auth===false){noAuth=true;$('#token').style.display='none';setStatus('内网免鉴权','ok');loadCfg()}
+  if(j.auth===false){
+    noAuth=true;$('#token').style.display='none';setStatus('内网免鉴权','ok');loadCfg();
+  }else{
+    noAuth=false;$('#token').style.display='';$('#token').placeholder='UI token（见 data/homelab.yaml → secret.ui_token）';
+    if(!tok())setStatus('需要 token','warn');
+  }
 }).catch(()=>{});
 loadCfg();
 </script>

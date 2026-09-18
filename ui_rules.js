@@ -315,7 +315,7 @@
   /* ---------- 存取 ---------- */
   async function load() {
     try {
-      const r = await fetch('/api/rules', { headers: { 'X-Token': TOK() } });
+      const r = await fetch('/api/rules', { cache: 'no-store', headers: { 'X-Token': TOK() } });
       if (!r.ok) { window.sgenLog('规则加载失败: ' + r.status, 'err'); return; }
       doc = await r.json();
       doc.rule_sets = doc.rule_sets || []; doc.dns_rules = doc.dns_rules || []; doc.route_rules = doc.route_rules || [];
