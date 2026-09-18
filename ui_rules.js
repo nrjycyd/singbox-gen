@@ -336,7 +336,7 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { window.sgenStatus('规则保存失败', 'err'); window.sgenLog('规则保存失败: ' + (j.error || r.status), 'err'); return; }
       window.sgenStatus('规则已保存', 'ok'); window.sgenLog('规则已写入 homelab.yaml', 'ok');
-      if (window.sgenReloadYaml) window.sgenReloadYaml();
+      if (window.sgenRefreshPreview) window.sgenRefreshPreview();
     } catch (e) { window.sgenLog('规则保存异常: ' + e.message, 'err'); }
   }
 

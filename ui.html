@@ -8,7 +8,7 @@
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;height:100vh}
 header{padding:10px 16px;background:var(--panel);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 header b{font-size:15px}
-select,input:not([type]){background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:4px 8px}
+select{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:4px 8px}
 button{background:var(--acc);color:#0b0d10;border:0;border-radius:4px;padding:6px 14px;font:inherit;cursor:pointer}
 button.alt{background:#2c313a;color:var(--fg)}
 button.mini{background:#2c313a;color:var(--fg);padding:2px 8px;font-size:12px}
@@ -18,27 +18,26 @@ main{flex:1;display:flex;min-height:0}
 .pane{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid #262a31}
 .pane:last-child{border-right:0}
 .pane>h3{margin:0;padding:8px 12px;font-size:12px;color:var(--mut);background:var(--panel);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:8px;font:inherit;resize:vertical;white-space:pre}
-#yaml{flex:1;border:0;border-radius:0;resize:none}
-#files{width:230px;overflow:auto;background:#17191e;flex:0 0 auto}
+#previewView{display:flex;flex:1;min-height:0}
+#files{width:250px;overflow:auto;background:#17191e;flex:0 0 auto}
 #files div{padding:6px 10px;cursor:pointer;color:var(--mut);border-bottom:1px solid #202329;font-size:13px}
 #files div.sel,#files div:hover{color:var(--acc);background:#1d2026}
-#files div.grp{color:#5d646e;background:#14161a;font-size:12px;padding:4px 10px}
 #content{flex:1;overflow:auto;padding:12px;margin:0;white-space:pre-wrap;word-break:break-all;font-size:13px}
-#log{height:140px;overflow:auto;background:#101216;border-top:1px solid #262a31;padding:8px 16px;font-size:13px;white-space:pre-wrap;color:var(--mut)}
+#log{height:130px;overflow:auto;background:#101216;border-top:1px solid #262a31;padding:8px 16px;font-size:13px;white-space:pre-wrap;color:var(--mut)}
 .ok{color:var(--ok)}.err{color:var(--err)}.warn{color:var(--warn)}
-#rulesView{flex:1;overflow:auto;display:none}
+#rulesView{flex:1;overflow:auto}
 #rulesRoot{padding:12px}
 .rcard{background:#1a1d23;border:1px solid #262a31;border-radius:6px;padding:10px 12px;margin-bottom:12px}
 .rcard h4{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:normal}
 .rlist{display:flex;flex-direction:column;gap:4px}
 .rrow{display:flex;gap:6px;align-items:center;background:#12141a;border:1px solid #262a31;border-radius:4px;padding:4px 8px}
 .handle{cursor:grab;color:var(--mut);user-select:none}
-.rjson{width:100%;min-height:220px}
+.rjson{width:100%;min-height:200px;background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:8px;font:inherit}
 .rf{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--mut)}
+.rf input,.rf select{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:3px 6px}
+.rf input[type=checkbox]{width:auto}
 .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.rtabs{display:flex;gap:6px}
-.rbar{margin-top:4px}
+.rbar{margin-top:6px;display:flex;gap:8px}
 .board{display:grid;grid-template-columns:1fr}
 .rchead{display:grid;grid-template-columns:20px 34px 1fr 1fr;gap:6px;color:var(--mut);font-size:12px;padding:2px 6px}
 .rrow2{display:grid;grid-template-columns:20px 34px 1fr 1fr;gap:6px;align-items:start;background:#12141a;border:1px solid #262a31;border-radius:4px;padding:4px 6px;margin-bottom:4px}
@@ -56,43 +55,33 @@ textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radi
 .rslabel.on{color:#0b0d10;background:var(--acc);border-radius:3px;padding:0 4px}
 .editor{grid-column:1 / -1;background:#1a1d23;border:1px solid #2c313a;border-radius:4px;padding:8px;margin-top:4px}
 .editor h4{margin:0 0 6px;font-size:12px;color:var(--mut);font-weight:normal}
-.modebar{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--mut)}
-.modebar label{display:flex;gap:3px;align-items:center;cursor:pointer}
+.mbtn{display:inline-flex;align-items:center;gap:4px}
 </style>
 </head>
 <body>
 <header>
   <b>singbox-gen</b>
-  <button onclick="saveCfg()">保存 YAML</button>
-  <button onclick="preview()">生成预览</button>
-  <button class="alt" onclick="dl('SFL')">下载 SFL zip</button>
-  <button class="alt" onclick="dl('SFA')">下载 SFA json</button>
-  <button class="alt" onclick="dl('SFI')">下载 SFI json</button>
+  <button onclick="dlSFL()">下载 SFL zip</button>
+  <button class="alt" onclick="dlPhone('SFA')">下载 SFA json</button>
+  <button class="alt" onclick="dlPhone('SFI')">下载 SFI json</button>
   <select id="pushMode" title="推送模式"></select>
   <button class="alt" onclick="push()">推送到网关 SFL(check 门禁)</button>
   <span id="status">连接中…</span>
 </header>
 <div id="banner" style="display:none;background:#5a3a12;color:#ffd9a0;padding:6px 16px;font-size:13px">
   当前使用<strong>自动生成的示例配置</strong>（节点为占位值，仅用于验证渲染与 UI）。
-  请编辑 homelab.yaml 填入真实节点/凭据/ECS，或把真实配置覆盖到 data/homelab.yaml 后重启容器。
+  请把真实配置写入 <code>data/homelab.yaml</code>（容器卷）后重启容器。
 </div>
 <main>
-  <section class="pane" style="flex:4">
-    <h3>homelab.yaml（单一事实源）</h3>
-    <textarea id="yaml" spellcheck="false"></textarea>
-  </section>
-  <section class="pane" style="flex:7">
-    <h3>
-      <span class="rtabs">
-        <button id="tabP" class="mini on" onclick="switchTab('preview')">产物预览</button>
-        <button id="tabR" class="mini" onclick="switchTab('rules')">规则编辑</button>
-      </span>
-      <span class="modebar" id="modebar"></span>
-    </h3>
-    <div id="previewView" style="display:flex;flex:1;min-height:0">
+  <section class="pane" style="flex:5">
+    <h3>产物预览 <span id="modebar"></span></h3>
+    <div id="previewView">
       <div id="files"></div>
-      <pre id="content"></pre>
+      <pre id="content">点击上方按钮加载对应产物（SFA / SFI / SFL 的 tun、ebpf、tproxy）</pre>
     </div>
+  </section>
+  <section class="pane" style="flex:5">
+    <h3>规则编辑（保存后自动刷新左侧预览）</h3>
     <div id="rulesView"><div id="rulesRoot"></div></div>
   </section>
 </main>
@@ -101,105 +90,109 @@ textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radi
 const $=s=>document.querySelector(s);
 window.$=$;
 let files={};
+let cur={target:'',mode:''};          // 当前预览选择
+let modeState={enabled:{},default_mode:'tun'};
 function setStatus(t,cls){const e=$('#status');e.textContent=t||'';e.className=cls||''}
 function log(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent='['+new Date().toLocaleTimeString()+'] '+t;$('#log').append(d);$('#log').scrollTop=1e9}
 window.sgenStatus=setStatus;window.sgenLog=log;
-function switchTab(v){
-  const p=v!=='rules';
-  $('#previewView').style.display=p?'flex':'none';
-  $('#rulesView').style.display=p?'none':'block';
-  $('#tabP').classList.toggle('on',p);$('#tabR').classList.toggle('on',!p);
-  if(!p&&window.rulesInit)window.rulesInit();
-}
-window.switchTab=switchTab;
 async function api(path,opts){opts=opts||{};opts.cache='no-store';return fetch(path,opts)}
-async function loadCfg(){
+
+/* ---------- 模式按钮（勾选=启用，点击=加载预览） ---------- */
+async function loadModes(){
   try{
-    const r=await api('/api/config');
-    if(!r.ok)throw new Error('加载失败: '+r.status);
-    $('#yaml').value=await r.text();
-    setStatus('已连接','ok');
-  }catch(e){setStatus('未连接','err');log(e.message||String(e),'err')}
+    const r=await api('/api/modes'); if(!r.ok)throw new Error('加载模式失败: '+r.status);
+    modeState=await r.json(); renderModebar(); renderPushSelect();
+  }catch(e){log(e.message||String(e),'err')}
 }
-window.sgenReloadYaml=loadCfg;
-async function saveCfg(){
-  try{
-    const r=await api('/api/config',{method:'POST',body:$('#yaml').value});
-    const j=await r.json().catch(()=>({}));
-    if(r.ok){setStatus('已保存','ok');log('保存成功（写入 homelab.yaml）','ok')}
-    else{setStatus('保存失败','err');log('保存失败: '+(j.error||r.status),'err')}
-  }catch(e){setStatus('保存失败','err');log(e.message||String(e),'err')}
-}
-/* ---- 模式勾选：直接改写左侧 YAML 文本（等保存/预览生效） ---- */
-const MODES=['tun','ebpf','tproxy'];
-function yamlSetModeEnabled(mode,on){
-  const lines=$('#yaml').value.split('\n');
-  let mi=-1;
-  for(let i=0;i<lines.length;i++){ if(new RegExp('^\\s{4}'+mode+':\\s*$').test(lines[i])){ mi=i; break } }
-  if(mi<0){ log('YAML 中未找到模式 '+mode+' 的定义','err'); return false }
-  for(let i=mi+1;i<lines.length;i++){
-    if(/^\s{4}\S/.test(lines[i])) break;               // 进入下一个模式
-    if(/^\s+enabled:\s*(true|false)\s*$/.test(lines[i])){ lines[i]=lines[i].replace(/(true|false)/, on?'true':'false'); $('#yaml').value=lines.join('\n'); return true }
-  }
-  log('模式 '+mode+' 下未找到 enabled 字段','err'); return false
-}
-function yamlSetDefaultMode(mode){
-  const t=$('#yaml').value.replace(/^(\s*default_mode:\s*).*$/m,'$1'+mode);
-  $('#yaml').value=t;
-}
-function renderModebar(modes,def){
+function renderModebar(){
   const bar=$('#modebar'); bar.innerHTML='';
-  MODES.forEach(m=>{
-    const lab=document.createElement('label');
-    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!(modes&&modes[m]);
-    cb.onchange=()=>{ if(yamlSetModeEnabled(m,cb.checked)){ setStatus('有未保存改动（'+m+' 已'+(cb.checked?'启用':'停用')+'）','warn') } else { cb.checked=!cb.checked } };
-    lab.append(cb,document.createTextNode(m)); bar.append(lab);
+  // 手机端
+  ['SFA','SFI'].forEach(t=>{
+    const b=document.createElement('button'); b.className='mini'; b.textContent=t;
+    b.onclick=()=>loadTarget(t,'');
+    bar.append(b);
+  });
+  // SFL 三模式（前带启用勾选）
+  ['tun','ebpf','tproxy'].forEach(m=>{
+    const w=document.createElement('span'); w.className='mbtn';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!modeState.enabled[m];
+    cb.title='启用/停用该模式（写入 homelab.yaml）';
+    cb.onchange=async()=>{
+      try{
+        const r=await api('/api/modes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m,enabled:cb.checked})});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok){cb.checked=!cb.checked; throw new Error(j.error||r.status)}
+        log('模式 '+m+(cb.checked?' 已启用':' 已停用'),'ok'); await loadModes();
+        if(cur.target==='SFL'&&cur.mode===m&&!cb.checked){$('#content').textContent='（该模式已停用）';files={};renderFiles()}
+      }catch(e){log(String(e.message||e),'err')}
+    };
+    const b=document.createElement('button'); b.className='mini'+(cur.target==='SFL'&&cur.mode===m?' on':'');
+    b.textContent='SFL:'+m; b.onclick=()=>loadTarget('SFL',m);
+    w.append(cb,b); bar.append(w);
   });
   const sel=document.createElement('select');
-  MODES.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent='默认: '+m;sel.append(o)});
-  sel.value=def||'tun';
-  sel.onchange=()=>{ yamlSetDefaultMode(sel.value); setStatus('有未保存改动（默认模式 '+sel.value+'）','warn') };
+  ['tun','ebpf','tproxy'].forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent='默认: '+m;sel.append(o)});
+  sel.value=modeState.default_mode||'tun';
+  sel.onchange=async()=>{
+    try{
+      const r=await api('/api/modes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({default_mode:sel.value})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(j.error||r.status);
+      log('默认模式 → '+sel.value,'ok'); await loadModes();
+    }catch(e){log(String(e.message||e),'err')}
+  };
+  sel.title='推送默认模式';
   bar.append(sel);
-  // 推送模式下拉：只列启用模式
-  const pm=$('#pushMode'); pm.innerHTML='';
-  const en=MODES.filter(m=>modes&&modes[m]);
-  (en.length?en:MODES).forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent='推送: '+m;pm.append(o)});
-  pm.value=(def&&en.includes(def))?def:(en[0]||'tun');
 }
-async function preview(){
+function renderPushSelect(){
+  const pm=$('#pushMode'); pm.innerHTML='';
+  const en=['tun','ebpf','tproxy'].filter(m=>modeState.enabled[m]);
+  (en.length?en:['tun','ebpf','tproxy']).forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent='推送: '+m;pm.append(o)});
+  pm.value=(en.includes(modeState.default_mode)?modeState.default_mode:en[0])||'tun';
+}
+
+/* ---------- 按需加载预览 ---------- */
+async function loadTarget(target,mode){
+  cur={target,mode};
   setStatus('生成中…','warn');
+  const q=target==='SFL'?('?target=SFL&mode='+encodeURIComponent(mode)):('?target='+encodeURIComponent(target));
   try{
-    const r=await api('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({yaml:$('#yaml').value})});
+    const r=await api('/api/preview'+q);
     const j=await r.json();
-    if(!r.ok){setStatus('生成失败','err');log('生成失败: '+(j.error||r.status),'err');return}
-    files={};
-    for(const [mode,m] of Object.entries(j.SFL||{})) for(const [n,c] of Object.entries(m)) files['SFL/'+mode+'/'+n]=c;
-    for(const t of ['SFA','SFI']) for(const [n,c] of Object.entries(j[t]||{})) files[t+'/'+n]=c;
-    const box=$('#files');box.innerHTML='';
-    let lastGrp='';
-    Object.keys(files).sort().forEach(n=>{
-      const grp=n.split('/').slice(0,2).join('/');
-      if(grp!==lastGrp){lastGrp=grp;box.append(Object.assign(document.createElement('div'),{className:'grp',textContent:grp}))}
-      const d=document.createElement('div');d.textContent=n.split('/').slice(2).join('/')||n;
-      d.onclick=()=>{const s=box.querySelector('.sel');if(s)s.classList.remove('sel');d.classList.add('sel');$('#content').textContent=files[n]};
-      box.append(d);
-    });
-    const first=box.querySelectorAll('div:not(.grp)')[0]; if(first)first.click();
-    renderModebar(j.modes,j.default_mode);
-    if($('#previewView').style.display==='none')switchTab('preview');
-    setStatus('预览 OK（'+Object.keys(files).length+' 个文件）','ok');log('预览生成成功','ok');
+    if(!r.ok){files={};renderFiles();$('#content').textContent='';setStatus('生成失败','err');log('生成失败: '+(j.error||r.status),'err');renderModebar();return}
+    files=j.files||{};
+    renderFiles();
+    const first=Object.keys(files).sort()[0]; if(first)selectFile(first);
+    setStatus('已加载 '+(j.label||target)+'（'+Object.keys(files).length+' 个文件）','ok');
+    log('已加载 '+(j.label||target),'ok'); renderModebar();
   }catch(e){setStatus('生成失败','err');log(e.message||String(e),'err')}
 }
-function dl(which){
-  log('开始下载 '+which+' …');
-  if(which==='SFL'){location.href='/download/SFL';return}
-  fetch('/download/'+which).then(r=>r.blob()).then(b=>{
-    const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='v1.14-mobile-'+which+'.json';a.click();
-  }).catch(e=>log('下载失败: '+e.message,'err'));
+window.sgenRefreshPreview=()=>{ if(cur.target) loadTarget(cur.target,cur.mode) };
+function renderFiles(){
+  const box=$('#files'); box.innerHTML='';
+  Object.keys(files).sort().forEach(n=>{
+    const d=document.createElement('div'); d.textContent=n;
+    d.onclick=()=>selectFile(n);
+    box.append(d);
+  });
+}
+function selectFile(n){
+  const box=$('#files');
+  Array.from(box.children).forEach(c=>c.classList.toggle('sel',c.textContent===n));
+  $('#content').textContent=files[n]||'';
+}
+
+/* ---------- 下载 / 推送 ---------- */
+function dlSFL(){log('开始下载 SFL zip …');location.href='/download/SFL'}
+function dlPhone(t){
+  log('开始下载 '+t+' json …');
+  fetch('/download/'+t).then(r=>r.blob()).then(b=>{
+    const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='v1.14-mobile-'+t+'.json';a.click();
+  }).catch(e=>log('下载失败: '+(e.message||e),'err'));
 }
 async function push(){
   const mode=$('#pushMode').value;
-  if(!mode){alert('请先点"生成预览"以确定启用模式');return}
+  if(!mode){alert('请先加载一次预览以确定启用模式');return}
   const warn={tun:'需要 ip_forward；tun 由 sing-box 自管 nftables',
               ebpf:'需要 reF1nd fork（with_ebpf）+ CAP_BPF，且无需 ip_forward',
               tproxy:'需要 ip_forward + nftables.conf + singbox_tproxy.service（fwmark 策略路由）'}[mode]||'';
@@ -212,9 +205,11 @@ async function push(){
     setStatus(txt.includes('完成')?'推送完成':'推送结束（见日志）',txt.includes('完成')?'ok':'err');
   }catch(e){setStatus('推送失败','err');log(e.message||String(e),'err')}
 }
+/* ---------- 启动 ---------- */
 fetch('/api/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{if(j.sample)$('#banner').style.display='block'}).catch(()=>{});
-loadCfg();
+loadModes();
 </script>
 <script src="/ui_rules.js"></script>
+<script>if(window.rulesInit)rulesInit();</script>
 </body>
 </html>

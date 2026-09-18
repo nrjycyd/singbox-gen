@@ -39,6 +39,7 @@ func (s *Server) HandleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config", s.apiConfig)
 	mux.HandleFunc("/api/status", s.apiStatus)
 	mux.HandleFunc("/api/rules", s.apiRules)
+	mux.HandleFunc("/api/modes", s.apiModes)
 	mux.HandleFunc("/api/preview", s.apiPreview)
 	mux.HandleFunc("/api/push", s.apiPush)
 	mux.HandleFunc("/download/SFL", s.dlSFL)
@@ -113,47 +114,51 @@ func renderAll(c *Config, dataDir string) (sfl map[string]map[string]string, pho
 	return
 }
 
+// apiPreview：按需生成（GET /api/preview?target=SFL&mode=tun 或 target=SFA|SFI）
 func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var raw struct{ YAML string }
-	if err := json.Unmarshal(body, &raw); err != nil || raw.YAML == "" {
-		errOut(w, 400, "body 需要 {\"yaml\": ...}")
-		return
-	}
-	c, err := LoadConfig2(raw.YAML)
+	c, err := s.loadCfg()
 	if err != nil {
-		errOut(w, 400, err.Error())
+		errOut(w, 500, fmt.Sprintf("配置加载失败（%s/homelab.yaml）: %v", s.dataDir, err))
 		return
 	}
-	sfl, phones, err := renderAll(c, s.dataDir)
-	if err != nil {
-		errOut(w, 400, err.Error())
-		return
-	}
-	for mode, files := range sfl {
-		if err := ValidateFiles(files); err != nil {
-			errOut(w, 400, fmt.Sprintf("SFL/%s 产物校验失败: %v", mode, err))
+	switch r.URL.Query().Get("target") {
+	case TgtSFL:
+		mode := r.URL.Query().Get("mode")
+		ms, ok := c.SFL.Modes[mode]
+		if !ok {
+			errOut(w, 400, fmt.Sprintf("SFL 无此模式: %q（可用: tun/ebpf/tproxy）", mode))
 			return
 		}
-	}
-	out := map[string]any{"SFL": sfl}
-	for t, p := range phones {
-		files := map[string]string{"v1.14-mobile-" + t + ".json": p}
-		if err := ValidateFiles(files); err != nil {
-			errOut(w, 400, t+" 产物校验失败: "+err.Error())
+		if !ms.Enabled {
+			errOut(w, 400, fmt.Sprintf("SFL 模式 %s 未启用（可在上方勾选启用）", mode))
 			return
 		}
-		out[t] = files
-	}
-	modeFlags := map[string]bool{}
-	for _, m := range []string{"tun", "ebpf", "tproxy"} {
-		if ms, ok := c.SFL.Modes[m]; ok && ms.Enabled {
-			modeFlags[m] = true
+		files, err := RenderSFL(c, mode, s.dataDir)
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
 		}
+		if err := ValidateFiles(files); err != nil {
+			errOut(w, 400, "产物校验失败: "+err.Error())
+			return
+		}
+		jsonOut(w, map[string]any{"label": "SFL/" + mode, "files": files})
+	case TgtSFA, TgtSFI:
+		target := r.URL.Query().Get("target")
+		p, err := RenderPhone(c, target, s.dataDir)
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		files := map[string]string{"v1.14-mobile-" + target + ".json": p}
+		if err := ValidateFiles(files); err != nil {
+			errOut(w, 400, "产物校验失败: "+err.Error())
+			return
+		}
+		jsonOut(w, map[string]any{"label": target, "files": files})
+	default:
+		errOut(w, 400, "target 需要 SFL / SFA / SFI")
 	}
-	out["modes"] = modeFlags
-	out["default_mode"] = c.SFL.DefaultMode
-	jsonOut(w, out)
 }
 
 func (s *Server) apiPush(w http.ResponseWriter, r *http.Request) {

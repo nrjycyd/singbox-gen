@@ -111,12 +111,20 @@ templates/systemd-unit.txt       systemd 单元
 ui.html                          内置 Web UI
 ```
 
-## Web UI
+## Web UI（左右双栏，按需加载）
 
-| 标签页 | 用途 |
-|:---|:---|
-| **产物预览** | 生成两端产物（网关按模式分目录 / 手机单文件），左侧文件树逐项查看；下载 zip；**模式勾选框**（tun/ebpf/tproxy）与默认模式选择 |
-| **规则编辑** | 可视化维护分流规则（见下） |
+```
+产物预览（左）                                  │ 规则编辑（右）
+[SFA][SFI]  [☑SFL:tun][☑SFL:ebpf][☑SFL:tproxy]  │ rule_sets / DNS 规则 / Route 规则
+文件树 + 内容                                    │ 拖动排序、向导添加、保存
+```
+
+- **按需生成**：点哪个按钮只渲染那一个（`SFA` / `SFI` / `SFL:tun|ebpf|tproxy`），不再一次性列出全部
+- 模式前的勾选框 = 启用/停用（定点写入 `homelab.yaml` 的 `SFL.modes.<mode>.enabled`，无需重启）
+- 右上 `默认: xxx` 下拉 = `SFL.default_mode`；推送按钮旁的下拉选择推送哪个模式
+- 规则编辑保存后**自动刷新左侧当前预览**
+- 界面不再提供 YAML 文本编辑区：**非规则部分**（节点/端口/模式入参/ECS 等）直接编辑部署目录的
+  `data/homelab.yaml`，然后在界面点一次按钮即可生效（配置每次请求实时读取，无需重启）
 
 ### 模式与端口
 
