@@ -28,7 +28,10 @@ main{flex:1;display:flex;min-height:0}
 #content{flex:1;overflow:auto;padding:12px;margin:0;white-space:pre-wrap;word-break:break-all;font-size:13px}
 #log{height:120px;overflow:auto;background:#101216;border-top:1px solid #262a31;padding:8px 16px;font-size:13px;white-space:pre-wrap;color:var(--mut)}
 .ok{color:var(--ok)}.err{color:var(--err)}.warn{color:var(--warn)}
-#mods{max-height:44%;overflow:auto;padding:8px 12px}
+#modWrap{position:relative;display:inline-flex;gap:6px;align-items:center}
+#modPanel{position:absolute;right:0;top:26px;z-index:30;background:#1a1d23;border:1px solid #2c313a;border-radius:6px;padding:8px;min-width:340px;max-height:62vh;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+#modPanel h4{margin:0 0 6px;font-size:12px;color:var(--mut);font-weight:normal}
+#mods{max-height:44%;overflow:auto}
 .mrow{display:flex;gap:8px;align-items:center;background:#12141a;border:1px solid #262a31;border-radius:4px;padding:3px 8px;margin-bottom:3px}
 .mrow span.n{flex:1}
 .mrow{border:1px solid #262a31}
@@ -37,6 +40,12 @@ main{flex:1;display:flex;min-height:0}
 .kvr input{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:2px 6px;font:inherit;font-size:12px}
 .item{background:#12141a;border:1px solid #2c313a;border-radius:4px;padding:6px;margin-bottom:6px}
 .itemh{display:flex;gap:6px;align-items:center;margin-bottom:4px;color:var(--mut);font-size:12px}
+.objed{margin-left:6px;padding-left:6px;border-left:1px dashed #262a31}
+.objed>.kvr{grid-template-columns:32% 1fr 22px;gap:4px;margin-bottom:3px}
+.arrbox{margin:3px 0}
+.arrbox>.item{background:#14161a;border:1px solid #262a31;border-radius:4px;padding:5px;margin-bottom:4px}
+details>summary{cursor:pointer;color:var(--mut);font-size:11px}
+details{margin:2px 0}
 .mrow .tag{font-size:11px;color:var(--mut)}
 #rulesView{flex:1;overflow:auto;border-top:1px solid #262a31}
 #rulesRoot{padding:12px}
@@ -88,12 +97,15 @@ main{flex:1;display:flex;min-height:0}
       <pre id="content">点击左侧文件查看内容</pre>
     </div>
   </section>
-  <section class="pane" style="flex:5">
-    <h3>配置模块 <select id="modTarget"></select> <span class="tag" style="color:var(--mut);font-size:11px">勾选=同步到左侧产物</span></h3>
-    <div id="mods"></div>
-    <h3>模块内容编辑（extra，非内置模块）</h3>
+  <section class="pane" style="flex:6">
+    <h3>规则编辑（保存后自动刷新左侧）
+      <span id="modWrap">
+        <select id="modTarget"></select>
+        <button class="mini" id="modBtn" onclick="toggleMods(event)">模块 ▾</button>
+        <div id="modPanel" style="display:none"></div>
+      </span>
+    </h3>
     <div id="extraRoot"></div>
-    <h3>规则编辑（保存后自动刷新左侧）</h3>
     <div id="rulesView"><div id="rulesRoot"></div></div>
   </section>
 </main>
@@ -176,10 +188,23 @@ async function loadModules(){
     renderModules();
   }catch(e){log('模块列表加载失败: '+(e.message||e),'err')}
 }
+function toggleMods(e){
+  if(e)e.stopPropagation();
+  const p=$('#modPanel'); const show=p.style.display==='none';
+  p.style.display=show?'block':'none';
+  if(show)renderModules();
+}
+document.addEventListener('click',(e)=>{
+  const w=$('#modWrap'), p=$('#modPanel');
+  if(w&&p&&p.style.display!=='none'&&!w.contains(e.target))p.style.display='none';
+});
 function renderModules(){
   const t=$('#modTarget').value||'SFL';
   const list=(modData.targets||{})[t]||[];
-  const box=$('#mods'); box.innerHTML='';
+  const box=$('#modPanel'); box.innerHTML='';
+  const en=list.filter(m=>m.enabled).length;
+  const btn=$('#modBtn'); if(btn)btn.textContent='模块 ('+en+'/'+list.length+') ▾';
+  box.append(Object.assign(document.createElement('h4'),{textContent:'勾选=同步到左侧产物；拖动=调整输出顺序'}));
   list.forEach((mi,idx)=>{
     const row=document.createElement('div'); row.className='mrow';
     row.draggable=true;
@@ -199,8 +224,11 @@ function renderModules(){
       }catch(err){log('排序保存失败: '+(err.message||err),'err')}
     };
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=mi.enabled;
-    if(!mi.has_content){cb.disabled=true;cb.title='该模块无内容：需在 YAML 的 extra.'+t+'.'+mi.name+' 提供'}
+    if(!mi.has_content&&!mi.builtin)cb.title='勾选后将打开编辑器，填入内容并保存即启用';
     cb.onchange=async()=>{
+      if(cb.checked&&!mi.has_content&&!mi.builtin){    // 无内容：直接进编辑器（保存即启用）
+        cb.checked=false; toggleMods(); openExtra(mi.name); return;
+      }
       try{
         const r=await api('/api/modules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:t,module:mi.name,enabled:cb.checked})});
         const j=await r.json().catch(()=>({}));
@@ -229,6 +257,14 @@ function renderPushSelect(){
 /* ---------- extra 模块 表单编辑器 ---------- */
 let extra={target:'',module:'',content:null,open:false};
 const ARRAY_MODULES=['endpoints','certificate_providers','network_namespaces'];
+const TEMPLATES={
+  ntp:{enabled:true,server:'ntp.aliyun.com',interval:'30m'},
+  certificate:{store:'system'},
+  certificate_providers:[],
+  network_namespaces:[{type:'default',tag:'default'}],
+  endpoints:[{type:'wireguard',tag:'wg0',address:['172.16.0.2/32'],private_key:'',
+              peers:[{address:'',port:51820,public_key:'',allowed_ips:['0.0.0.0/0'],persistent_keepalive_interval:30}]}]
+};
 const KEYHINTS={
   ntp:['enabled','server','server_port','interval','detour','domain_resolver','write_to_system'],
   certificate:['store','store_path','certificate','certificate_path','certificate_public_key_sha256'],
@@ -244,7 +280,8 @@ function openExtra(module){
     .then(r=>r.json().then(j=>({ok:r.ok,j})))
     .then(({ok,j})=>{
       if(!ok)throw new Error(j.error||'读取失败');
-      extra.content = j.has ? j.content : (ARRAY_MODULES.includes(module)?[]:{});
+      extra.content = j.has ? j.content : ((TEMPLATES[module]!==undefined)?JSON.parse(JSON.stringify(TEMPLATES[module])):(ARRAY_MODULES.includes(module)?[]:{}));
+      if(!j.has&&TEMPLATES[module]!==undefined)window.sgenLog('已填入 '+module+' 默认模板，请修改后保存','warn');
       renderExtra();
     })
     .catch(e=>{log('读取 extra 失败: '+(e.message||e),'err'); renderExtra()});
@@ -312,26 +349,76 @@ function renderExtra(){
   card.append(adv,bar);
   box.append(card);
 }
-function kvEditor(obj,onchange){
+function kvEditor(obj,onchange,depth){
+  depth=depth||0;
   const wrap=document.createElement('div');
+  wrap.className='objed';
   function draw(){
     wrap.innerHTML='';
-    Object.keys(obj).forEach(k=>{
+    Object.keys(obj).forEach(function(k){
       const row=document.createElement('div'); row.className='kvr';
       const ki=document.createElement('input'); ki.value=k; ki.setAttribute('list','kh_'+extra.module);
-      ki.onchange=()=>{ if(ki.value===k||ki.value===''){ki.value=k;return} const v=obj[k]; delete obj[k]; obj[ki.value]=v; onchange(); draw() };
-      const vi=document.createElement('input');
-      vi.value=(typeof obj[k]==='string')?obj[k]:JSON.stringify(obj[k]);
-      vi.onchange=()=>{ obj[k]=parseVal(vi.value); onchange() };
+      ki.onchange=function(){ if(ki.value===k||ki.value===''){ki.value=k;return}
+        const v=obj[k]; delete obj[k]; obj[ki.value]=v; onchange(); draw() };
+      const cell=valEditor(obj,k,onchange,draw,depth);
       const del=document.createElement('button'); del.className='mini'; del.textContent='×';
-      del.onclick=()=>{ delete obj[k]; onchange(); draw() };
-      row.append(ki,vi,del); wrap.append(row);
+      del.onclick=function(){ delete obj[k]; onchange(); draw() };
+      row.append(ki,cell,del); wrap.append(row);
     });
     const add=document.createElement('button'); add.className='mini'; add.textContent='+ 字段';
-    add.onclick=()=>{ let n='new_key'; while(n in obj)n+='_'; obj[n]=''; onchange(); draw() };
+    add.onclick=function(){ let n='new_key'; while(n in obj)n+='_'; obj[n]=''; onchange(); draw() };
     wrap.append(add);
   }
   draw(); return wrap;
+}
+/* valEditor：按值类型给出编辑器 —— 标量输入 / 对象递归子表单 / 对象数组递归列表 */
+function valEditor(obj,key,onchange,redraw,depth){
+  const v=obj[key];
+  if(Array.isArray(v)){
+    const hasObj=v.some(function(x){return x!==null&&typeof x==='object'});
+    if(!hasObj){                                   // 标量数组：单行 JSON
+      const inp=document.createElement('input'); inp.value=JSON.stringify(v);
+      inp.onchange=function(){ obj[key]=parseVal(inp.value); onchange() };
+      return inp;
+    }
+    const box=document.createElement('div'); box.className='arrbox';
+    v.forEach(function(it,i){
+      if(it===null||typeof it!=='object'||Array.isArray(it)){ v[i]=parseVal(String(it)) }
+      const card=document.createElement('div'); card.className='item'; card.draggable=true;
+      let dragFrom=null;
+      card.ondragstart=function(){dragFrom=i};
+      card.ondragover=function(e){e.preventDefault()};
+      card.ondrop=function(){ if(dragFrom===null||dragFrom===i)return;
+        const x=v.splice(dragFrom,1)[0]; v.splice(i,0,x); onchange(); redraw() };
+      const ih=document.createElement('div'); ih.className='itemh';
+      ih.append(document.createTextNode('#'+(i+1)+' '+String(it.type||'')));
+      const up=document.createElement('button'); up.className='mini'; up.textContent='↑';
+      up.onclick=function(){ if(i>0){const x=v.splice(i,1)[0]; v.splice(i-1,0,x); onchange(); redraw()} };
+      const dn=document.createElement('button'); dn.className='mini'; dn.textContent='↓';
+      dn.onclick=function(){ if(i<v.length-1){const x=v.splice(i,1)[0]; v.splice(i+1,0,x); onchange(); redraw()} };
+      const cp=document.createElement('button'); cp.className='mini'; cp.textContent='复制';
+      cp.onclick=function(){ v.splice(i+1,0,JSON.parse(JSON.stringify(v[i]))); onchange(); redraw() };
+      const rm=document.createElement('button'); rm.className='mini'; rm.textContent='删除';
+      rm.onclick=function(){ v.splice(i,1); onchange(); redraw() };
+      ih.append(up,dn,cp,rm);
+      card.append(ih, kvEditor(it,onchange,depth+1));
+      box.append(card);
+    });
+    const add=document.createElement('button'); add.className='mini'; add.textContent='+ 添加项';
+    add.onclick=function(){ v.push({type:'',tag:''}); onchange(); redraw() };
+    box.append(add);
+    return box;
+  }
+  if(v!==null&&typeof v==='object'){               // 嵌套对象：可折叠递归子表单
+    const det=document.createElement('details'); det.open=(depth<2);
+    const sum=document.createElement('summary'); sum.textContent='{…} 子字段';
+    det.append(sum, kvEditor(v,onchange,depth+1));
+    return det;
+  }
+  const inp=document.createElement('input');       // 标量
+  inp.value=(typeof v==='string')?v:JSON.stringify(v);
+  inp.onchange=function(){ obj[key]=parseVal(inp.value); onchange() };
+  return inp;
 }
 
 /* ---------- 下载 / 推送 ---------- */
