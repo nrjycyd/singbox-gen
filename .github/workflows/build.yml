@@ -31,11 +31,15 @@ jobs:
           test -f /tmp/d/homelab.yaml || { echo "引导失败: 未生成 homelab.yaml"; exit 1; }
           ls -l /tmp/d /tmp/d/certs
           # /p 走完整渲染管线（dns/route 装配 + 解析 + 引用闭环），失败即非 200
-          curl -fsS http://127.0.0.1:18090/p/demo-profile/mobile.json -o /tmp/mobile.json
-          head -c 160 /tmp/mobile.json; echo
+          curl -fsS http://127.0.0.1:18090/p/demo-profile/sfa.json -o /tmp/sfa.json
+          curl -fsS http://127.0.0.1:18090/p/demo-profile/sfi.json -o /tmp/sfi.json
+          head -c 120 /tmp/sfa.json; echo
           # 网关端同样走渲染 + 校验（含 pinned 块）
-          curl -fsS "http://127.0.0.1:18090/download/gateway" -o /tmp/gw.zip
-          test -s /tmp/gw.zip && echo "gateway render OK ($(stat -c%s /tmp/gw.zip) bytes)"
+          curl -fsS "http://127.0.0.1:18090/download/SFL" -o /tmp/gw.zip
+          curl -fsS "http://127.0.0.1:18090/download/SFA" -o /tmp/sfa.zip
+          curl -fsS "http://127.0.0.1:18090/download/SFI" -o /tmp/sfi.zip
+          for z in gw sfa sfi; do test -s /tmp/$z.zip || { echo "$z 下载为空"; exit 1; }; done
+          test -s /tmp/gw.zip && echo "SFL 渲染 OK ($(stat -c%s /tmp/gw.zip) bytes)"
           curl -fsS http://127.0.0.1:18090/api/status; echo
           # 规则保存链路：GET → PUT 原样回写 → 再 GET 必须一致（覆盖 yaml.Node 定点替换）
           curl -fsS http://127.0.0.1:18090/api/rules -o /tmp/rules1.json

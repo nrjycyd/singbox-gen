@@ -2,8 +2,9 @@
 
 单一事实源 `data/homelab.yaml` → 装配两端产物：
 
-- **gateway（Linux / SFL）**：目录型 conf（00~07 + systemd 单元），Web 下载 zip 或 SSH 推送
-- **phone（SFA / SFI）**：单文件 profile（注释版 + nocomment 版），经订阅 URL 分发给手机客户端
+- **gateway（Linux / SFL）**：三种透明代理模式（**tun / ebpf / tproxy**，UI 勾选多选 + 端口自定义），
+  每种模式一套 conf 目录（00~07 + systemd 单元）；可 Web 下载 zip 或按模式 SSH 推送
+- **phone（SFA / SFI）**：单文件 profile，经订阅 URL 分发给手机客户端
 
 分流规则（DNS 与 route 同源瀑布流）全部定义在 `data/homelab.yaml` 的 `dns_rules` / `route_rules` 中，
 顺序即优先级、可按 `_scope` 分端、按 `_if` 受策略开关控制；模板只保留固定段骨架。
@@ -65,10 +66,11 @@ docker compose restart
 
 ## 手机订阅
 
-SFA/SFI 添加远程配置（改完 YAML 保存后，手机端刷新即生效，服务端每次请求实时渲染）：
+手机端添加远程配置（改完 YAML 保存后，刷新即生效，服务端每次请求实时渲染）：
 
 ```
-http://<部署机IP>:8090/p/<secret.profile_token>/mobile.json
+Android（SFA）: http://<部署机IP>:8090/p/<secret.profile_token>/sfa.json
+iOS（SFI）    : http://<部署机IP>:8090/p/<secret.profile_token>/sfi.json
 ```
 
 ## 推送到网关（check 门禁）
@@ -79,6 +81,17 @@ http://<部署机IP>:8090/p/<secret.profile_token>/mobile.json
    异常自动回滚备份并重启。
 
 > 首次使用先在 UI 预览比对（右侧文件树逐项看），确认与现行 conf 等价再推。
+
+## 目标端模型
+
+| 目标端 | 说明 | 产物 |
+|---|---|---|
+| **SFL** | Linux 网关（三种模式：tun/ebpf/tproxy） | `SFL/<mode>/00..07 + systemd` |
+| **SFA** | Android（SFA 客户端） | 单文件 profile |
+| **SFI** | iOS（SFI 客户端） | 单文件 profile |
+| `mobile` | SFA/SFI 的共享基座 | — |
+
+- `SFA:` / `SFI:` 只写与 `mobile` 不同的字段（缺省全部继承）；作用域字段（policy / rule_sets.scope / 规则 `_scope` / cusdom / selectors / nodes.targets）取值 **both | SFL | SFA | SFI | mobile**（`mobile` = 两台手机）
 
 ## 仓库 vs 部署数据（边界）
 
@@ -102,8 +115,20 @@ ui.html                          内置 Web UI
 
 | 标签页 | 用途 |
 |:---|:---|
-| **产物预览** | 生成两端产物（网关目录 / 手机单文件），左侧文件树逐项查看；下载 zip |
+| **产物预览** | 生成两端产物（网关按模式分目录 / 手机单文件），左侧文件树逐项查看；下载 zip；**模式勾选框**（tun/ebpf/tproxy）与默认模式选择 |
 | **规则编辑** | 可视化维护分流规则（见下） |
+
+### 模式与端口
+
+- 勾选框对应 YAML 的 `SFL.modes.<mode>.enabled`；勾选即改写左侧 YAML 文本（点"保存 YAML"生效）
+- 端口统一在 `SFL.ports`（mixed / socks / fake_in / api / redirect / tproxy），生成前校验范围与重复
+- 各模式前置条件（推送时弹窗提示）：
+
+| 模式 | 前置条件 |
+|---|---|
+| tun | `net.ipv4.ip_forward=1`；nftables 由 sing-box（auto_redirect）自管 |
+| ebpf | **reF1nd fork**（`with_ebpf`）+ `CAP_BPF`；TC 挂下游接口，**不需要 ip_forward** |
+| tproxy | `ip_forward=1`；宿主侧需 `nftables.conf` + `singbox_tproxy.service`（fwmark 策略路由）——本项目**不生成**这两个高危物件 |
 
 ### 规则编辑页（方案 B：同屏三栏 + 行级联动）
 

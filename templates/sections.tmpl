@@ -6,7 +6,7 @@
 {{- end}}
 
 {{define "b01"}}"experimental": {
-{{if eq .Target "phone"}}{{if .F.clash}}    // Clash API：声明后手机 App 仪表盘出现 Clash Mode 切换卡片
+{{if ne .Target "SFL"}}{{if .F.clash}}    // Clash API：声明后手机 App 仪表盘出现 Clash Mode 切换卡片
     "clash_api": {
       "default_mode": "Rule"
     },
@@ -21,7 +21,7 @@
 
 {{define "b02"}}"dns": {
     "servers": [
-{{if eq .Target "gateway"}}      // 国外 DNS：DoH，走代理，解析国外域名
+{{if eq .Target "SFL"}}      // 国外 DNS：DoH，走代理，解析国外域名
       {
         "type": "https",
         "tag": "remote-dns",
@@ -76,46 +76,14 @@
 {{end}}    ],
     "rules": [
 {{.DnsRules}}
-    ]{{if eq .Target "gateway"}},
+    ]{{if eq .Target "SFL"}},
     "final": "remote-dns",
     "strategy": "prefer_ipv4"{{end}}
   }
 {{- end}}
 
 {{define "b03"}}"inbounds": [
-{{if eq .Target "gateway"}}    // HTTP + SOCKS5 混合入站：手动指定代理的设备用
-    {
-      "type": "mixed",
-      "tag": "mixed-in",
-      "listen": "::",
-      "listen_port": {{.Sp.MixedPort}}
-    },
-    {
-      "type": "socks",
-      "tag": "socks-in",
-      "listen": "::",
-      "listen_port": {{.Sp.SocksPort}}
-    },
-    // TUN 透明代理：auto_redirect 优于 tproxy 且避开 Docker 冲突
-    {
-      "type": "tun",
-      "tag": "tun-in",
-      "interface_name": "{{.Sp.TunIface}}",
-      "address": [{{.TunAddrs}}],
-      "mtu": {{.Sp.TunMTU}},
-      "dns_mode": "disabled",
-      "auto_route": true,
-      "auto_redirect": true,
-      "strict_route": true,
-      "stack": "mixed"
-    },
-    // FakeIP DNS 入口：SmartDNS 把国外域名查询转发到这里，经 hijack-dns 进 DNS 模块
-    {
-      "type": "direct",
-      "tag": "fake-in",
-      "listen": "::",
-      "listen_port": {{.Sp.FakeInPort}}
-    }
+{{if eq .Target "SFL"}}{{.Inbounds}}
 {{else}}    {
       "type": "tun",
       "tag": "tun-in",
@@ -125,7 +93,7 @@
       "dns_mode": "hijack",
       "auto_route": true,
       "strict_route": true,
-      "stack": "mixed"
+      "stack": "{{.Sp.Stack}}"
     }
 {{end}}  ]
 {{- end}}
@@ -137,13 +105,13 @@
     "rules": [
 {{.RouteRules}}
     ],
-{{if eq .Target "gateway"}}    "default_domain_resolver": {
+{{if eq .Target "SFL"}}    "default_domain_resolver": {
       "server": "{{.Sp.DomainResolv}}",
       "strategy": "ipv4_only"
     },
     "auto_detect_interface": true,
-    // default_mark 已移除：与 tun auto_redirect 冲突（sing-box 官方文档明确）
-    "final": "select"
+{{if .RouteExtra}}{{.RouteExtra}}
+{{end}}    "final": "select"
 {{else}}    "auto_detect_interface": true,
     "default_domain_resolver": {
       "server": "{{.Sp.DomainResolv}}",
@@ -169,7 +137,7 @@
       "type": "api",
       "tag": "sing-box-api",
       "listen": "0.0.0.0",
-      "listen_port": {{.Sp.ApiPort}},
+      "listen_port": {{.ApiPort}},
       "access_control_allow_origin": [],
       "access_control_allow_private_network": true,
       "dashboard": {

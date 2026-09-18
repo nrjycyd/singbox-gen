@@ -41,8 +41,9 @@ func (s *Server) HandleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/rules", s.apiRules)
 	mux.HandleFunc("/api/preview", s.apiPreview)
 	mux.HandleFunc("/api/push", s.apiPush)
-	mux.HandleFunc("/download/gateway", s.dlGateway)
-	mux.HandleFunc("/download/phone", s.dlPhone)
+	mux.HandleFunc("/download/SFL", s.dlSFL)
+	mux.HandleFunc("/download/SFA", func(w http.ResponseWriter, r *http.Request) { s.dlPhone(w, r, TgtSFA) })
+	mux.HandleFunc("/download/SFI", func(w http.ResponseWriter, r *http.Request) { s.dlPhone(w, r, TgtSFI) })
 	mux.HandleFunc("/p/", s.serveProfile)
 	mux.HandleFunc("/ui_rules.js", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := uiFS.ReadFile("ui_rules.js")
@@ -95,12 +96,20 @@ func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, map[string]any{"sample": IsSampleConfig(s.dataDir)})
 }
 
-func renderAll(c *Config, dataDir string) (gw map[string]string, phoneFull, phoneNoCmt string, err error) {
-	gw, err = RenderGateway(c, dataDir)
+// renderAll：SFL（按模式分组）+ SFA / SFI 单文件
+func renderAll(c *Config, dataDir string) (sfl map[string]map[string]string, phones map[string]string, err error) {
+	sfl, err = RenderSFLModes(c, dataDir)
 	if err != nil {
 		return
 	}
-	phoneFull, phoneNoCmt, err = RenderPhone(c, dataDir)
+	phones = map[string]string{}
+	for _, t := range PhoneTargets {
+		p, e := RenderPhone(c, t, dataDir)
+		if e != nil {
+			return nil, nil, fmt.Errorf("目标端 %s: %w", t, e)
+		}
+		phones[t] = p
+	}
 	return
 }
 
@@ -116,21 +125,34 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
 		errOut(w, 400, err.Error())
 		return
 	}
-	gw, full, nc, err := renderAll(c, s.dataDir)
+	sfl, phones, err := renderAll(c, s.dataDir)
 	if err != nil {
 		errOut(w, 400, err.Error())
 		return
 	}
-	out := map[string]map[string]string{"gateway": gw, "phone": map[string]string{"v1.14-mobile-config.json": full, "v1.14-mobile-config.nocomment.json": nc}}
-	// 自校验：产物必须可解析且引用闭环
-	if err := ValidateFiles(out["phone"]); err != nil {
-		errOut(w, 400, "phone 产物校验失败: "+err.Error())
-		return
+	for mode, files := range sfl {
+		if err := ValidateFiles(files); err != nil {
+			errOut(w, 400, fmt.Sprintf("SFL/%s 产物校验失败: %v", mode, err))
+			return
+		}
 	}
-	if err := ValidateFiles(gw); err != nil {
-		errOut(w, 400, "gateway 产物校验失败: "+err.Error())
-		return
+	out := map[string]any{"SFL": sfl}
+	for t, p := range phones {
+		files := map[string]string{"v1.14-mobile-" + t + ".json": p}
+		if err := ValidateFiles(files); err != nil {
+			errOut(w, 400, t+" 产物校验失败: "+err.Error())
+			return
+		}
+		out[t] = files
 	}
+	modeFlags := map[string]bool{}
+	for _, m := range []string{"tun", "ebpf", "tproxy"} {
+		if ms, ok := c.SFL.Modes[m]; ok && ms.Enabled {
+			modeFlags[m] = true
+		}
+	}
+	out["modes"] = modeFlags
+	out["default_mode"] = c.SFL.DefaultMode
 	jsonOut(w, out)
 }
 
@@ -148,20 +170,49 @@ func (s *Server) apiPush(w http.ResponseWriter, r *http.Request) {
 		errOut(w, 500, err.Error())
 		return
 	}
-	gw, _, _, err := renderAll(c, s.dataDir)
+	// 推送模式：body {"mode":"tun"} 或 ?mode=，默认 default_mode
+	var raw struct {
+		Mode string `json:"mode"`
+	}
+	if b, _ := io.ReadAll(r.Body); len(b) > 0 {
+		_ = json.Unmarshal(b, &raw)
+	}
+	mode := raw.Mode
+	if mode == "" {
+		mode = r.URL.Query().Get("mode")
+	}
+	if mode == "" {
+		mode = c.SFL.DefaultMode
+	}
+	enabled := false
+	for _, m := range c.EnabledModes() {
+		if m == mode {
+			enabled = true
+		}
+	}
+	if !enabled {
+		errOut(w, 400, fmt.Sprintf("模式 %q 未启用（已启用: %v）", mode, c.EnabledModes()))
+		return
+	}
+	gw, _, err := renderAll(c, s.dataDir)
 	if err != nil {
 		errOut(w, 400, "生成失败: "+err.Error())
 		return
 	}
+	files := gw[mode]
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprintf(w, "推送模式: %s（%d 个文件）\n", mode, len(files))
 	flusher, _ := w.(http.Flusher)
+	if flusher != nil {
+		flusher.Flush()
+	}
 	p := &Pusher{spec: c.Push, dataDir: s.dataDir, logf: func(l string) {
 		fmt.Fprintln(w, l)
 		if flusher != nil {
 			flusher.Flush()
 		}
 	}}
-	if err := p.Deploy(gw); err != nil {
+	if err := p.Deploy(files); err != nil {
 		fmt.Fprintln(w, "失败: "+err.Error())
 	}
 }
@@ -189,50 +240,71 @@ func zipFiles(files map[string]string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (s *Server) dlGateway(w http.ResponseWriter, r *http.Request) {
+func (s *Server) dlSFL(w http.ResponseWriter, r *http.Request) {
 	c, err := s.loadCfg()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	gw, _, _, err := renderAll(c, s.dataDir)
+	sfl, _, err := renderAll(c, s.dataDir)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	b, err := zipFiles(gw)
+	zipIn := map[string]string{}
+	for mode, files := range sfl {
+		for n, body := range files {
+			zipIn[mode+"/"+n] = body
+		}
+	}
+	b, err := zipFiles(zipIn)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	w.Header().Set("Content-Disposition", `attachment; filename="sfl-tun-conf.zip"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="singbox-gen-SFL.zip"`)
 	w.Write(b)
 }
 
-func (s *Server) dlPhone(w http.ResponseWriter, r *http.Request) {
+func (s *Server) dlPhone(w http.ResponseWriter, r *http.Request, target string) {
 	c, err := s.loadCfg()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	_, full, nc, err := renderAll(c, s.dataDir)
+	_, phones, err := renderAll(c, s.dataDir)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	b, err := zipFiles(map[string]string{"v1.14-mobile-config.json": full, "v1.14-mobile-config.nocomment.json": nc})
+	body, ok := phones[target]
+	if !ok {
+		http.Error(w, "未知目标端: "+target, 400)
+		return
+	}
+	b, err := zipFiles(map[string]string{"v1.14-mobile-" + target + ".json": body})
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	w.Header().Set("Content-Disposition", `attachment; filename="sfi-phone.zip"`)
+	w.Header().Set("Content-Disposition", "attachment; filename=\"singbox-gen-"+target+".zip\"")
 	w.Write(b)
 }
 
 func (s *Server) serveProfile(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/p/")
 	parts := strings.SplitN(rest, "/", 2)
-	if len(parts) != 2 || parts[1] != "mobile.json" {
+	if len(parts) != 2 {
+		http.NotFound(w, r)
+		return
+	}
+	target := ""
+	switch strings.ToLower(parts[1]) {
+	case "sfa.json":
+		target = TgtSFA
+	case "sfi.json":
+		target = TgtSFI
+	default:
 		http.NotFound(w, r)
 		return
 	}
@@ -245,12 +317,12 @@ func (s *Server) serveProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", 403)
 		return
 	}
-	_, full, _, err := renderAll(c, s.dataDir)
+	_, phones, err := renderAll(c, s.dataDir)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Write([]byte(full))
+	w.Write([]byte(phones[target]))
 }

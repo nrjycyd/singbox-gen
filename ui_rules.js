@@ -104,7 +104,7 @@
       g.value = rs.group || 'geosite'; g.onchange = () => { rs.group = g.value; render(); };
       const item = el('input'); item.value = rs.item || ''; item.style.width = '110px';
       item.onchange = () => { rs.item = item.value.trim(); render(); };
-      const sc = el('select'); ['both', 'gateway', 'phone'].forEach((v) => { const o = el('option', '', v); o.value = v; sc.append(o); });
+      const sc = el('select'); ['both', 'SFL', 'SFA', 'SFI', 'mobile'].forEach((v) => { const o = el('option', '', v); o.value = v; sc.append(o); });
       sc.value = rs.scope || 'both'; sc.onchange = () => { rs.scope = sc.value; render(); };
       const tag = tagOf(rs);
       const n = countRefs(tag);
@@ -221,7 +221,7 @@
     const mk = (label, node) => { const w = el('label', 'rf'); w.append(el('span', '', label), node); return w; };
     const note = el('input'); note.value = cur._note || '';
     const grp = el('input'); grp.value = cur._group || groupOf(cur, side === 'dns_rules' ? 'dns' : 'route', index); grp.placeholder = '步骤编号（如 6 / 8b，留空则按注释前缀推导）';
-    const scope = el('select'); ['', 'both', 'gateway', 'phone'].forEach((v) => { const o = el('option', '', v || '（默认 both）'); o.value = v; scope.append(o); }); scope.value = cur._scope || '';
+    const scope = el('select'); ['', 'both', 'SFL', 'SFA', 'SFI', 'mobile'].forEach((v) => { const o = el('option', '', v || '（默认 both）'); o.value = v; scope.append(o); }); scope.value = cur._scope || '';
     const iff = el('input'); iff.value = cur._if || ''; iff.placeholder = 'pinned/cn_extra/clash/telegram/gh（可留空）';
     const fEach = el('input'); fEach.value = cur._for_each || ''; fEach.placeholder = '_for_each（如 pinned_sets）';
     const action = el('select');

@@ -15,35 +15,156 @@ type DNSep struct {
 	Port   int    `yaml:"port"`
 }
 
+// 目标端：SFL（Linux 网关）/ SFA（Android）/ SFI（iOS）；mobile = 两台手机的共同基座
+const (
+	TgtSFL    = "SFL"
+	TgtSFA    = "SFA"
+	TgtSFI    = "SFI"
+	TgtMobile = "mobile"
+)
+
+var AllTargets = []string{TgtSFL, TgtSFA, TgtSFI}
+var PhoneTargets = []string{TgtSFA, TgtSFI}
+
+func IsPhone(target string) bool { return target == TgtSFA || target == TgtSFI }
+
+// ScopeMatch：作用域匹配（空/both=全端；mobile=两台手机）
+func ScopeMatch(scope, target string) bool {
+	switch scope {
+	case "", "both":
+		return true
+	case TgtMobile:
+		return IsPhone(target)
+	default:
+		return scope == target
+	}
+}
+
 type TargetSpec struct {
-	ProxyDNS      string    `yaml:"proxy_dns"`
-	DnsLocal      DNSep     `yaml:"dns_local"`
-	DnsBootstrap  DNSep     `yaml:"dns_bootstrap"`
-	DnsRemote     DNSep     `yaml:"dns_remote"`
-	FakeIPV4      string    `yaml:"fakeip_v4"`
-	FakeIPV6      string    `yaml:"fakeip_v6"`
-	GhCidr        []string  `yaml:"gh_cidr"`
-	DomainResolv  string    `yaml:"domain_resolver_server"`
-	TunIface      string    `yaml:"tun_interface"`
-	TunAddress    []string  `yaml:"tun_address"`
-	TunMTU        int       `yaml:"tun_mtu"`
-	MixedPort     int       `yaml:"mixed_port"`
-	SocksPort     int       `yaml:"socks_port"`
-	FakeInPort    int       `yaml:"fake_in_port"`
-	ApiPort       int       `yaml:"api_port"`
-	DashboardPath string    `yaml:"dashboard_path"`
-	LogLevel      string    `yaml:"log_level"`
-	LogOutput     string    `yaml:"log_output"`
-	CachePath     string    `yaml:"cache_path"`
-	StoreFakeIP   bool      `yaml:"store_fakeip"`
-	StoreDNS      bool      `yaml:"store_dns"`
-	ClashAPI      bool      `yaml:"clash_api"`
+	ProxyDNS      string   `yaml:"proxy_dns"`
+	DnsLocal      DNSep    `yaml:"dns_local"`
+	DnsBootstrap  DNSep    `yaml:"dns_bootstrap"`
+	DnsRemote     DNSep    `yaml:"dns_remote"`
+	FakeIPV4      string   `yaml:"fakeip_v4"`
+	FakeIPV6      string   `yaml:"fakeip_v6"`
+	GhCidr        []string `yaml:"gh_cidr"`
+	DomainResolv  string   `yaml:"domain_resolver_server"`
+	TunIface      string   `yaml:"tun_interface"`
+	TunAddress    []string `yaml:"tun_address"`
+	TunMTU        int      `yaml:"tun_mtu"`
+	Stack         string   `yaml:"stack"`
+	MixedPort     int      `yaml:"mixed_port"`
+	SocksPort     int      `yaml:"socks_port"`
+	FakeInPort    int      `yaml:"fake_in_port"`
+	ApiPort       int      `yaml:"api_port"`
+	DashboardPath string   `yaml:"dashboard_path"`
+	LogLevel      string   `yaml:"log_level"`
+	LogOutput     string   `yaml:"log_output"`
+	CachePath     string   `yaml:"cache_path"`
+	StoreFakeIP   bool     `yaml:"store_fakeip"`
+	StoreDNS      bool     `yaml:"store_dns"`
+	ClashAPI      bool     `yaml:"clash_api"`
+}
+
+// PhoneSpec：手机端平台块（SFA / SFI）。所有字段缺省继承 mobile 基座。
+type PhoneSpec struct {
+	TargetSpec `yaml:",inline"`
+}
+
+// mergeFrom：用基座回填零值字段（平台块只写差异）
+func (p *PhoneSpec) mergeFrom(base PhoneSpec) {
+	mergeStr(&p.ProxyDNS, base.ProxyDNS)
+	mergeStr(&p.FakeIPV4, base.FakeIPV4)
+	mergeStr(&p.FakeIPV6, base.FakeIPV6)
+	mergeStr(&p.DomainResolv, base.DomainResolv)
+	mergeStr(&p.TunIface, base.TunIface)
+	mergeStr(&p.Stack, base.Stack)
+	mergeStr(&p.DashboardPath, base.DashboardPath)
+	mergeStr(&p.LogLevel, base.LogLevel)
+	mergeStr(&p.LogOutput, base.LogOutput)
+	mergeStr(&p.CachePath, base.CachePath)
+	if len(p.GhCidr) == 0 {
+		p.GhCidr = base.GhCidr
+	}
+	if len(p.TunAddress) == 0 {
+		p.TunAddress = base.TunAddress
+	}
+	if p.TunMTU == 0 {
+		p.TunMTU = base.TunMTU
+	}
+	mergePort(&p.MixedPort, base.MixedPort)
+	mergePort(&p.SocksPort, base.SocksPort)
+	mergePort(&p.FakeInPort, base.FakeInPort)
+	mergePort(&p.ApiPort, base.ApiPort)
+	if !p.StoreFakeIP {
+		p.StoreFakeIP = base.StoreFakeIP
+	}
+	if !p.StoreDNS {
+		p.StoreDNS = base.StoreDNS
+	}
+	if !p.ClashAPI {
+		p.ClashAPI = base.ClashAPI
+	}
+	mergeDNSep(&p.DnsLocal, base.DnsLocal)
+	mergeDNSep(&p.DnsBootstrap, base.DnsBootstrap)
+	mergeDNSep(&p.DnsRemote, base.DnsRemote)
+}
+
+func mergeStr(dst *string, base string) {
+	if *dst == "" {
+		*dst = base
+	}
+}
+func mergePort(dst *int, base int) {
+	if *dst == 0 {
+		*dst = base
+	}
+}
+func mergeDNSep(dst *DNSep, base DNSep) {
+	if dst.Type == "" {
+		dst.Type = base.Type
+	}
+	if dst.Tag == "" {
+		dst.Tag = base.Tag
+	}
+	if dst.Server == "" {
+		dst.Server = base.Server
+	}
+	if dst.Port == 0 {
+		dst.Port = base.Port
+	}
+}
+
+// Ports：网关入站端口（公共入站 + tproxy 专用），生成前校验范围与重复
+type Ports struct {
+	Mixed    int `yaml:"mixed"`
+	Socks    int `yaml:"socks"`
+	FakeIn   int `yaml:"fake_in"`
+	API      int `yaml:"api"`
+	Redirect int `yaml:"redirect"`
+	Tproxy   int `yaml:"tproxy"`
+}
+
+// ModeSpec：一种透明代理模式（tun / ebpf / tproxy）
+type ModeSpec struct {
+	Enabled      bool           `yaml:"enabled"`
+	Inbounds     []Rule         `yaml:"inbounds"`      // 模式特有入站（公共入站自动生成）
+	RouteOptions map[string]any `yaml:"route_options"` // 本模式的 route 级选项（如 default_mark）
+}
+
+// GatewaySpec：SFL 端配置（含模式与端口）
+type GatewaySpec struct {
+	TargetSpec  `yaml:",inline"`
+	DefaultMode string              `yaml:"default_mode"`
+	Listen      string              `yaml:"listen"`
+	Ports       Ports               `yaml:"ports"`
+	Modes       map[string]ModeSpec `yaml:"modes"`
 }
 
 type RuleSet struct {
 	Group string `yaml:"group" json:"group"` // geosite|geoip
 	Item  string `yaml:"item" json:"item"`
-	Scope string `yaml:"scope" json:"scope"` // both|gateway|phone
+	Scope string `yaml:"scope" json:"scope"` // both|SFL|SFA|SFI|mobile
 }
 
 type Cusdom struct {
@@ -66,56 +187,67 @@ type Node struct {
 	ObfsPass    string   `yaml:"obfs_password"`
 	UUID        string   `yaml:"uuid"`
 	SNI         string   `yaml:"sni"`
-	CertPath    string   `yaml:"cert_path"`  // 网关用 certificate_path
+	CertPath    string   `yaml:"cert_path"`  // SFL 用 certificate_path
 	CertFile    string   `yaml:"cert_file"`  // 手机用内联证书（相对 data 目录）
 	IPv6OnlyDNS bool     `yaml:"ipv6_only_dns"`
 }
 
-// Members: 支持 YAML 序列（两端相同）或映射 {gateway:[], phone:[]}
+// Members: YAML 序列（全端相同）或映射 {SFL: [], mobile: [], SFA: [], SFI: []}
 type Members struct {
-	Shared  []string
-	Gateway []string
-	Phone   []string
+	Shared   []string
+	ByTarget map[string][]string
 }
 
 func (m *Members) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind == yaml.SequenceNode {
 		return value.Decode(&m.Shared)
 	}
-	var s struct {
-		Gateway []string `yaml:"gateway"`
-		Phone   []string `yaml:"phone"`
-	}
-	if err := value.Decode(&s); err != nil {
+	var raw map[string][]string
+	if err := value.Decode(&raw); err != nil {
 		return err
 	}
-	m.Gateway, m.Phone = s.Gateway, s.Phone
+	m.ByTarget = raw
 	return nil
 }
 
 func (m *Members) For(target string) []string {
-	var s []string
-	if target == "gateway" {
-		s = m.Gateway
-	} else {
-		s = m.Phone
+	if m.ByTarget != nil {
+		if v, ok := m.ByTarget[target]; ok && len(v) > 0 {
+			return v
+		}
+		if v, ok := m.ByTarget[TgtMobile]; ok && len(v) > 0 && IsPhone(target) {
+			return v
+		}
 	}
-	if len(s) == 0 {
-		s = m.Shared
-	}
-	return s
+	return m.Shared
 }
 
+// Default2：选择器默认出口 {SFL: X, mobile: Y}
 type Default2 struct {
-	Gateway string `yaml:"gateway"`
-	Phone   string `yaml:"phone"`
+	ByTarget map[string]string
+}
+
+func (d *Default2) UnmarshalYAML(value *yaml.Node) error {
+	var raw map[string]string
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	d.ByTarget = raw
+	return nil
 }
 
 func (d Default2) For(target string) string {
-	if target == "gateway" {
-		return d.Gateway
+	if d.ByTarget != nil {
+		if v, ok := d.ByTarget[target]; ok && v != "" {
+			return v
+		}
+		if IsPhone(target) {
+			if v, ok := d.ByTarget[TgtMobile]; ok && v != "" {
+				return v
+			}
+		}
 	}
-	return d.Phone
+	return ""
 }
 
 type SelectorDef struct {
@@ -133,7 +265,7 @@ type PushSpec struct {
 }
 
 // Rule: 一条分流规则。除元键外，所有键原样进入 sing-box 规则对象。
-// 元键：_note 注释 | _group 步骤编号（UI 配对/联动排序） | _scope both|gateway|phone
+// 元键：_note 注释 | _group 步骤编号（UI 配对/联动排序） | _scope both|SFL|SFA|SFI|mobile
 //       _if 策略开关名 | _for_each 列表名（pinned_sets）
 // 字符串值支持变量：{{proxy_dns}} {{local_dns}} {{remote_dns}} {{ecs}} {{pinned_outbound}} {{item}}
 // 列表值支持整项替换：["{{gh_cidr}}"] → 展开为目标端的 gh 网段列表
@@ -152,22 +284,25 @@ var knownFlags = map[string]bool{
 
 type Config struct {
 	Secret struct {
-		ProfileToken string `yaml:"profile_token"` // 手机订阅 URL 的路径凭证（/p/<此值>/mobile.json）
+		ProfileToken string `yaml:"profile_token"` // 手机订阅 URL 路径凭证（/p/<此值>/sfa.json|sfi.json）
 	} `yaml:"secret"`
-	Ecs       string            `yaml:"ecs"`
-	RuleDir   string            `yaml:"rule_dir"` // 网关 .srs 根目录
-	Gateway   TargetSpec        `yaml:"gateway"`
-	Phone     TargetSpec        `yaml:"phone"`
-	Policy    map[string]string `yaml:"policy"` // pinned/cn_extra/clash/fakeip/telegram/gh -> both|gateway|phone
-	RuleSets  []RuleSet         `yaml:"rule_sets"`
-	Cusdom    map[string]Cusdom `yaml:"cusdom"` // key: gateway|phone
-	Pinned    PinnedSpec        `yaml:"pinned"` // 钉定块（policy.pinned 开启时必填）
+	Ecs     string `yaml:"ecs"`
+	RuleDir string `yaml:"rule_dir"` // SFL 的 .srs 根目录
+	// 三个目标端
+	SFL    GatewaySpec        `yaml:"SFL"`
+	Mobile PhoneSpec          `yaml:"mobile"` // SFA/SFI 共享基座
+	SFA    PhoneSpec          `yaml:"SFA"`
+	SFI    PhoneSpec          `yaml:"SFI"`
+	Policy map[string]string  `yaml:"policy"` // pinned/cn_extra/clash/fakeip/telegram/gh -> both|SFL|SFA|SFI|mobile
+	RuleSets []RuleSet        `yaml:"rule_sets"`
+	Cusdom   map[string]Cusdom `yaml:"cusdom"` // key: SFL|SFA|SFI|mobile
+	Pinned  PinnedSpec        `yaml:"pinned"`
 	Selectors struct {
 		Proxy SelectorDef `yaml:"proxy"`
 		Gh    SelectorDef `yaml:"gh"`
 	} `yaml:"selectors"`
-	Nodes  []Node   `yaml:"nodes"`
-	Push   PushSpec `yaml:"push"`
+	Nodes []Node   `yaml:"nodes"`
+	Push  PushSpec `yaml:"push"`
 
 	// 分流规则（单一事实源；顺序即优先级，首条命中即停）
 	DnsRules   []Rule `yaml:"dns_rules"`
@@ -190,28 +325,177 @@ func LoadConfig2(text string) (*Config, error) {
 	if c.Ecs == "" {
 		return nil, fmt.Errorf("缺少 ecs 配置")
 	}
-	for k := range c.Policy {
-		if !knownFlags[k] {
-			return nil, fmt.Errorf("policy 含未知开关 %q（可用: pinned/cn_extra/clash/fakeip/telegram/gh）", k)
+	for name, v := range c.Policy {
+		if !knownFlags[name] {
+			return nil, fmt.Errorf("policy 含未知开关 %q（可用: pinned/cn_extra/clash/fakeip/telegram/gh）", name)
+		}
+		switch v {
+		case "both", TgtSFL, TgtSFA, TgtSFI, TgtMobile:
+		default:
+			return nil, fmt.Errorf("policy.%s=%q 非法（可用: both/SFL/SFA/SFI/mobile）", name, v)
 		}
 	}
 	if len(c.DnsRules) == 0 || len(c.RouteRules) == 0 {
 		return nil, fmt.Errorf("缺少 dns_rules / route_rules（可从 templates/homelab.example.yaml 复制规则段）")
 	}
+	for i, rs := range c.RuleSets {
+		switch rs.Scope {
+		case "", "both", TgtSFL, TgtSFA, TgtSFI, TgtMobile:
+		default:
+			return nil, fmt.Errorf("rule_sets[%d].scope=%q 非法（可用: both/SFL/SFA/SFI/mobile）", i, rs.Scope)
+		}
+	}
+	if err := c.validateSFL(); err != nil {
+		return nil, err
+	}
+	if err := c.validatePhone(TgtSFA); err != nil {
+		return nil, err
+	}
+	if err := c.validatePhone(TgtSFI); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+var gatewayModes = []string{"tun", "ebpf", "tproxy"}
+
+// EnabledModes 返回启用的模式（按 tun/ebpf/tproxy 固定顺序）
+func (c *Config) EnabledModes() []string {
+	var out []string
+	for _, m := range gatewayModes {
+		if ms, ok := c.SFL.Modes[m]; ok && ms.Enabled {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func modeHasInbound(ms ModeSpec, typ string) bool {
+	for _, in := range ms.Inbounds {
+		if t, ok := in["type"].(string); ok && t == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) validateSFL() error {
+	g := &c.SFL
+	if len(g.Modes) == 0 {
+		return fmt.Errorf("SFL.modes 未配置（可用: tun / ebpf / tproxy）")
+	}
+	for m := range g.Modes {
+		if m != "tun" && m != "ebpf" && m != "tproxy" {
+			return fmt.Errorf("SFL.modes 含未知模式 %q（可用: tun / ebpf / tproxy）", m)
+		}
+	}
+	enabled := map[string]bool{}
+	for _, m := range c.EnabledModes() {
+		enabled[m] = true
+	}
+	if len(enabled) == 0 {
+		return fmt.Errorf("SFL.modes 至少启用一个模式（enabled: true）")
+	}
+	if g.Listen == "" {
+		g.Listen = "::"
+	}
+	if g.DefaultMode == "" {
+		g.DefaultMode = c.EnabledModes()[0]
+	}
+	if !enabled[g.DefaultMode] {
+		return fmt.Errorf("SFL.default_mode=%s 未被启用", g.DefaultMode)
+	}
+	portOf := map[string]int{
+		"mixed": g.Ports.Mixed, "socks": g.Ports.Socks, "fake_in": g.Ports.FakeIn,
+		"api": g.Ports.API, "redirect": g.Ports.Redirect, "tproxy": g.Ports.Tproxy,
+	}
+	need := []string{"mixed", "socks", "fake_in", "api"}
+	if enabled["tproxy"] {
+		need = append(need, "redirect", "tproxy")
+	}
+	used := map[int]string{}
+	for _, n := range need {
+		v := portOf[n]
+		if v == 0 {
+			return fmt.Errorf("SFL.ports.%s 未配置（启用 %v 模式需要）", n, c.EnabledModes())
+		}
+		if v < 1 || v > 65535 {
+			return fmt.Errorf("SFL.ports.%s=%d 超出 1-65535", n, v)
+		}
+		if prev, ok := used[v]; ok {
+			return fmt.Errorf("端口冲突：SFL.ports.%s 与 %s 都是 %d", prev, n, v)
+		}
+		used[v] = n
+	}
+	if enabled["tun"] && !modeHasInbound(g.Modes["tun"], "tun") {
+		return fmt.Errorf("SFL.modes.tun.inbounds 缺少 type=tun 入站")
+	}
+	if enabled["ebpf"] && !modeHasInbound(g.Modes["ebpf"], "ebpf") {
+		return fmt.Errorf("SFL.modes.ebpf.inbounds 缺少 type=ebpf 入站")
+	}
+	if enabled["tproxy"] && (!modeHasInbound(g.Modes["tproxy"], "redirect") || !modeHasInbound(g.Modes["tproxy"], "tproxy")) {
+		return fmt.Errorf("SFL.modes.tproxy.inbounds 需要 type=redirect 与 type=tproxy 两个入站")
+	}
+	return nil
+}
+
+func (c *Config) validatePhone(target string) error {
+	sp := c.effectivePhone(target)
+	if sp.TunIface == "" {
+		return fmt.Errorf("%s/mobile 缺少 tun_interface", target)
+	}
+	if len(sp.TunAddress) == 0 {
+		return fmt.Errorf("%s/mobile 缺少 tun_address", target)
+	}
+	if sp.TunMTU == 0 {
+		return fmt.Errorf("%s/mobile 缺少 tun_mtu", target)
+	}
+	if sp.ProxyDNS == "" {
+		return fmt.Errorf("%s/mobile 缺少 proxy_dns", target)
+	}
+	return nil
+}
+
+// effectivePhone：平台块 + mobile 基座合并结果
+func (c *Config) effectivePhone(target string) *PhoneSpec {
+	out := &PhoneSpec{}
+	switch target {
+	case TgtSFA:
+		out.TargetSpec = c.SFA.TargetSpec
+	case TgtSFI:
+		out.TargetSpec = c.SFI.TargetSpec
+	}
+	out.mergeFrom(c.Mobile)
+	if out.TargetSpec.Stack == "" {
+		out.TargetSpec.Stack = "mixed"
+	}
+	return out
 }
 
 // flagOf: 策略块对当前 target 是否启用
 func (c *Config) flagOf(name, target string) bool {
-	s := c.Policy[name]
-	return s == "both" || s == target
+	return ScopeMatch(c.Policy[name], target)
 }
 
+// targetSpec: SFL 直接返回；手机端返回合并后的副本
 func (c *Config) targetSpec(target string) *TargetSpec {
-	if target == "gateway" {
-		return &c.Gateway
+	if target == TgtSFL {
+		return &c.SFL.TargetSpec
 	}
-	return &c.Phone
+	return &c.effectivePhone(target).TargetSpec
+}
+
+// cusdomOf: 自定义域名集（平台未定义时回退 mobile）
+func (c *Config) cusdomOf(target string) Cusdom {
+	if cu, ok := c.Cusdom[target]; ok {
+		return cu
+	}
+	if IsPhone(target) {
+		if cu, ok := c.Cusdom[TgtMobile]; ok {
+			return cu
+		}
+	}
+	return Cusdom{}
 }
 
 func quotedJoin(list []string) string {
