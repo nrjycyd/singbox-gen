@@ -40,6 +40,8 @@ func (s *Server) HandleRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/status", s.apiStatus)
 	mux.HandleFunc("/api/rules", s.apiRules)
 	mux.HandleFunc("/api/modes", s.apiModes)
+	mux.HandleFunc("/api/modules", s.apiModules)
+	mux.HandleFunc("/api/extra", s.apiExtra)
 	mux.HandleFunc("/api/preview", s.apiPreview)
 	mux.HandleFunc("/api/push", s.apiPush)
 	mux.HandleFunc("/download/SFL", s.dlSFL)

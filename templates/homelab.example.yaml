@@ -107,6 +107,21 @@ mobile:
 SFA: {}
 SFI: {}
 
+# 模块开关：勾选=同步到左侧产物。内置模块默认启用（services 仅 SFL），其余默认关闭。
+# 仅需写与默认不同的项，例：  SFL: {services: true}
+# 非建模模块（ntp / certificate / certificate_providers / network_namespaces / endpoints）
+# 启用时必须在 extra 提供内容。
+modules: {}
+# 模块输出顺序（界面拖动模块即写这里；缺省按内置顺序）
+# module_order: [log, dns, http_clients, inbounds, outbounds, route, experimental]
+# 非建模模块的原样内容（透传进产物，值支持 {{proxy_dns}} 等变量）
+# 例：
+# extra:
+#   SFL:
+#     ntp: {enabled: true, server: ntp.aliyun.com}
+#     endpoints: [{type: wireguard, tag: wg, ...}]
+extra: {}
+
 rule_sets:
   - {group: geosite, item: private,            scope: both}
   - {group: geosite, item: category-ads-all,   scope: both}

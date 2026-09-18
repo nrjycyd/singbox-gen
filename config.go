@@ -282,6 +282,84 @@ var knownFlags = map[string]bool{
 	"fakeip": true, "telegram": true, "gh": true,
 }
 
+// 模块：sing-box 顶层配置段（顺序即输出顺序）
+var AllModules = []string{
+	"log", "dns", "ntp", "certificate", "certificate_providers", "http_clients",
+	"network_namespaces", "endpoints", "inbounds", "outbounds", "route", "services", "experimental",
+}
+
+// 生成器"原生建模"的模块（其余需用 extra: 原样提供内容）
+var builtinModules = map[string]bool{
+	"log": true, "dns": true, "http_clients": true, "inbounds": true,
+	"outbounds": true, "route": true, "services": true, "experimental": true,
+}
+
+// 各目标端的默认启用模块
+func defaultModules(target string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range AllModules {
+		out[m] = builtinModules[m]
+	}
+	if target != TgtSFL {
+		out["services"] = false
+	}
+	return out
+}
+
+// ModuleEnabled：模块开关（modules.<target>.<name>，缺省取默认）
+func (c *Config) ModuleEnabled(target, name string) bool {
+	if tm, ok := c.Modules[target]; ok {
+		if v, ok := tm[name]; ok {
+			return v
+		}
+	}
+	if IsPhone(target) {
+		if tm, ok := c.Modules[TgtMobile]; ok {
+			if v, ok := tm[name]; ok {
+				return v
+			}
+		}
+	}
+	return defaultModules(target)[name]
+}
+
+// ModuleOrder：全局模块输出顺序（未列出的按 AllModules 顺序补在后面）
+func (c *Config) OrderedModules() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range c.ModuleOrder {
+		for _, ok := range AllModules {
+			if ok == m && !seen[m] {
+				out = append(out, m)
+				seen[m] = true
+			}
+		}
+	}
+	for _, m := range AllModules {
+		if !seen[m] {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// ExtraOf：非建模模块的原样内容（extra.<target>.<name>）
+func (c *Config) ExtraOf(target, name string) (any, bool) {
+	if tm, ok := c.Extra[target]; ok {
+		if v, ok := tm[name]; ok {
+			return v, true
+		}
+	}
+	if IsPhone(target) {
+		if tm, ok := c.Extra[TgtMobile]; ok {
+			if v, ok := tm[name]; ok {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
 type Config struct {
 	Secret struct {
 		ProfileToken string `yaml:"profile_token"` // 手机订阅 URL 路径凭证（/p/<此值>/sfa.json|sfi.json）
@@ -289,14 +367,20 @@ type Config struct {
 	Ecs     string `yaml:"ecs"`
 	RuleDir string `yaml:"rule_dir"` // SFL 的 .srs 根目录
 	// 三个目标端
-	SFL    GatewaySpec        `yaml:"SFL"`
-	Mobile PhoneSpec          `yaml:"mobile"` // SFA/SFI 共享基座
-	SFA    PhoneSpec          `yaml:"SFA"`
-	SFI    PhoneSpec          `yaml:"SFI"`
-	Policy map[string]string  `yaml:"policy"` // pinned/cn_extra/clash/fakeip/telegram/gh -> both|SFL|SFA|SFI|mobile
-	RuleSets []RuleSet        `yaml:"rule_sets"`
+	SFL    GatewaySpec       `yaml:"SFL"`
+	Mobile PhoneSpec         `yaml:"mobile"` // SFA/SFI 共享基座
+	SFA    PhoneSpec         `yaml:"SFA"`
+	SFI    PhoneSpec         `yaml:"SFI"`
+	Policy map[string]string `yaml:"policy"` // pinned/cn_extra/clash/fakeip/telegram/gh -> both|SFL|SFA|SFI|mobile
+	RuleSets []RuleSet       `yaml:"rule_sets"`
 	Cusdom   map[string]Cusdom `yaml:"cusdom"` // key: SFL|SFA|SFI|mobile
-	Pinned  PinnedSpec        `yaml:"pinned"`
+	Pinned   PinnedSpec      `yaml:"pinned"`
+	// 模块开关：modules.<target>.<module> = true/false（缺省见 defaultModules）
+	Modules map[string]map[string]bool `yaml:"modules"`
+	// 非建模模块的原样内容：extra.<target>.<module>（如 ntp / endpoints / certificate）
+	Extra map[string]map[string]any `yaml:"extra"`
+	// 模块输出顺序（缺省按 AllModules）
+	ModuleOrder []string `yaml:"module_order"`
 	Selectors struct {
 		Proxy SelectorDef `yaml:"proxy"`
 		Gh    SelectorDef `yaml:"gh"`
@@ -343,6 +427,17 @@ func LoadConfig2(text string) (*Config, error) {
 		case "", "both", TgtSFL, TgtSFA, TgtSFI, TgtMobile:
 		default:
 			return nil, fmt.Errorf("rule_sets[%d].scope=%q 非法（可用: both/SFL/SFA/SFI/mobile）", i, rs.Scope)
+		}
+	}
+	for _, m := range c.ModuleOrder {
+		ok := false
+		for _, name := range AllModules {
+			if name == m {
+				ok = true
+			}
+		}
+		if !ok {
+			return nil, fmt.Errorf("module_order 含未知模块 %q", m)
 		}
 	}
 	if err := c.validateSFL(); err != nil {

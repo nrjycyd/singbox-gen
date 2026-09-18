@@ -8,7 +8,7 @@
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;height:100vh}
 header{padding:10px 16px;background:var(--panel);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 header b{font-size:15px}
-select{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:4px 8px}
+select{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:3px 6px;font:inherit}
 button{background:var(--acc);color:#0b0d10;border:0;border-radius:4px;padding:6px 14px;font:inherit;cursor:pointer}
 button.alt{background:#2c313a;color:var(--fg)}
 button.mini{background:#2c313a;color:var(--fg);padding:2px 8px;font-size:12px}
@@ -19,13 +19,26 @@ main{flex:1;display:flex;min-height:0}
 .pane:last-child{border-right:0}
 .pane>h3{margin:0;padding:8px 12px;font-size:12px;color:var(--mut);background:var(--panel);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #previewView{display:flex;flex:1;min-height:0}
-#files{width:250px;overflow:auto;background:#17191e;flex:0 0 auto}
-#files div{padding:6px 10px;cursor:pointer;color:var(--mut);border-bottom:1px solid #202329;font-size:13px}
-#files div.sel,#files div:hover{color:var(--acc);background:#1d2026}
+#fileGroups{width:290px;overflow:auto;background:#17191e;flex:0 0 auto;border-right:1px solid #202329}
+.tgroup{border-bottom:1px solid #202329}
+.thead{display:flex;gap:6px;align-items:center;padding:6px 8px;background:#1a1d23;position:sticky;top:0}
+.thead b{font-size:12px;color:var(--fg)}
+.tfiles div{padding:4px 10px 4px 18px;cursor:pointer;color:var(--mut);font-size:12px;border-bottom:1px solid #191c21}
+.tfiles div.sel,.tfiles div:hover{color:var(--acc);background:#1d2026}
 #content{flex:1;overflow:auto;padding:12px;margin:0;white-space:pre-wrap;word-break:break-all;font-size:13px}
-#log{height:130px;overflow:auto;background:#101216;border-top:1px solid #262a31;padding:8px 16px;font-size:13px;white-space:pre-wrap;color:var(--mut)}
+#log{height:120px;overflow:auto;background:#101216;border-top:1px solid #262a31;padding:8px 16px;font-size:13px;white-space:pre-wrap;color:var(--mut)}
 .ok{color:var(--ok)}.err{color:var(--err)}.warn{color:var(--warn)}
-#rulesView{flex:1;overflow:auto}
+#mods{max-height:44%;overflow:auto;padding:8px 12px}
+.mrow{display:flex;gap:8px;align-items:center;background:#12141a;border:1px solid #262a31;border-radius:4px;padding:3px 8px;margin-bottom:3px}
+.mrow span.n{flex:1}
+.mrow{border:1px solid #262a31}
+.mrow.drag{opacity:.5}
+.kvr{display:grid;grid-template-columns:38% 1fr 24px;gap:4px;margin-bottom:3px}
+.kvr input{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:2px 6px;font:inherit;font-size:12px}
+.item{background:#12141a;border:1px solid #2c313a;border-radius:4px;padding:6px;margin-bottom:6px}
+.itemh{display:flex;gap:6px;align-items:center;margin-bottom:4px;color:var(--mut);font-size:12px}
+.mrow .tag{font-size:11px;color:var(--mut)}
+#rulesView{flex:1;overflow:auto;border-top:1px solid #262a31}
 #rulesRoot{padding:12px}
 .rcard{background:#1a1d23;border:1px solid #262a31;border-radius:6px;padding:10px 12px;margin-bottom:12px}
 .rcard h4{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:normal}
@@ -35,7 +48,6 @@ main{flex:1;display:flex;min-height:0}
 .rjson{width:100%;min-height:200px;background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:8px;font:inherit}
 .rf{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--mut)}
 .rf input,.rf select{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:3px 6px}
-.rf input[type=checkbox]{width:auto}
 .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .rbar{margin-top:6px;display:flex;gap:8px}
 .board{display:grid;grid-template-columns:1fr}
@@ -55,33 +67,33 @@ main{flex:1;display:flex;min-height:0}
 .rslabel.on{color:#0b0d10;background:var(--acc);border-radius:3px;padding:0 4px}
 .editor{grid-column:1 / -1;background:#1a1d23;border:1px solid #2c313a;border-radius:4px;padding:8px;margin-top:4px}
 .editor h4{margin:0 0 6px;font-size:12px;color:var(--mut);font-weight:normal}
-.mbtn{display:inline-flex;align-items:center;gap:4px}
 </style>
 </head>
 <body>
 <header>
   <b>singbox-gen</b>
-  <button onclick="dlSFL()">下载 SFL zip</button>
-  <button class="alt" onclick="dlPhone('SFA')">下载 SFA json</button>
-  <button class="alt" onclick="dlPhone('SFI')">下载 SFI json</button>
+  <button class="mini" onclick="loadAll()">重新加载全部</button>
   <select id="pushMode" title="推送模式"></select>
   <button class="alt" onclick="push()">推送到网关 SFL(check 门禁)</button>
   <span id="status">连接中…</span>
 </header>
 <div id="banner" style="display:none;background:#5a3a12;color:#ffd9a0;padding:6px 16px;font-size:13px">
-  当前使用<strong>自动生成的示例配置</strong>（节点为占位值，仅用于验证渲染与 UI）。
-  请把真实配置写入 <code>data/homelab.yaml</code>（容器卷）后重启容器。
+  当前使用<strong>自动生成的示例配置</strong>（节点为占位值）。请把真实配置写入 <code>data/homelab.yaml</code> 后重新加载。
 </div>
 <main>
   <section class="pane" style="flex:5">
-    <h3>产物预览 <span id="modebar"></span></h3>
+    <h3>产物预览（默认全显：SFA / SFI / SFL）</h3>
     <div id="previewView">
-      <div id="files"></div>
-      <pre id="content">点击上方按钮加载对应产物（SFA / SFI / SFL 的 tun、ebpf、tproxy）</pre>
+      <div id="fileGroups"></div>
+      <pre id="content">点击左侧文件查看内容</pre>
     </div>
   </section>
   <section class="pane" style="flex:5">
-    <h3>规则编辑（保存后自动刷新左侧预览）</h3>
+    <h3>配置模块 <select id="modTarget"></select> <span class="tag" style="color:var(--mut);font-size:11px">勾选=同步到左侧产物</span></h3>
+    <div id="mods"></div>
+    <h3>模块内容编辑（extra，非内置模块）</h3>
+    <div id="extraRoot"></div>
+    <h3>规则编辑（保存后自动刷新左侧）</h3>
     <div id="rulesView"><div id="rulesRoot"></div></div>
   </section>
 </main>
@@ -89,125 +101,261 @@ main{flex:1;display:flex;min-height:0}
 <script>
 const $=s=>document.querySelector(s);
 window.$=$;
-let files={};
-let cur={target:'',mode:''};          // 当前预览选择
+const TARGETS=['SFA','SFI','SFL'];
+const MODES=['tun','ebpf','tproxy'];
+let state={SFA:{files:{}},SFI:{files:{}},SFL:{mode:'tun',files:{}}};
 let modeState={enabled:{},default_mode:'tun'};
+let modData={};
+let curFile={t:'',n:''};
 function setStatus(t,cls){const e=$('#status');e.textContent=t||'';e.className=cls||''}
 function log(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent='['+new Date().toLocaleTimeString()+'] '+t;$('#log').append(d);$('#log').scrollTop=1e9}
 window.sgenStatus=setStatus;window.sgenLog=log;
-async function api(path,opts){opts=opts||{};opts.cache='no-store';return fetch(path,opts)}
+async function api(p,o){o=o||{};o.cache='no-store';return fetch(p,o)}
 
-/* ---------- 模式按钮（勾选=启用，点击=加载预览） ---------- */
-async function loadModes(){
-  try{
-    const r=await api('/api/modes'); if(!r.ok)throw new Error('加载模式失败: '+r.status);
-    modeState=await r.json(); renderModebar(); renderPushSelect();
-  }catch(e){log(e.message||String(e),'err')}
-}
-function renderModebar(){
-  const bar=$('#modebar'); bar.innerHTML='';
-  // 手机端
-  ['SFA','SFI'].forEach(t=>{
-    const b=document.createElement('button'); b.className='mini'; b.textContent=t;
-    b.onclick=()=>loadTarget(t,'');
-    bar.append(b);
+/* ---------- 左侧：三目标常显 ---------- */
+function renderGroups(){
+  const box=$('#fileGroups'); box.innerHTML='';
+  TARGETS.forEach(t=>{
+    const g=document.createElement('div'); g.className='tgroup';
+    const h=document.createElement('div'); h.className='thead';
+    const b=document.createElement('b'); b.textContent=t; h.append(b);
+    if(t==='SFL'){
+      const sel=document.createElement('select');
+      MODES.forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent=m;sel.append(o)});
+      sel.value=state.SFL.mode;
+      sel.onchange=()=>{state.SFL.mode=sel.value;loadTarget('SFL')};
+      h.append(sel);
+      if(!modeState.enabled[state.SFL.mode]){const w=document.createElement('span');w.className='tag';w.style.color='var(--warn)';w.textContent='未启用';h.append(w)}
+    }
+    const dl=document.createElement('button'); dl.className='mini'; dl.textContent='下载';
+    dl.onclick=()=>t==='SFL'?dlSFL():dlPhone(t);
+    const rf=document.createElement('button'); rf.className='mini'; rf.textContent='刷新';
+    rf.onclick=()=>loadTarget(t);
+    h.append(dl,rf);
+    g.append(h);
+    const list=document.createElement('div'); list.className='tfiles';
+    const files=state[t].files||{};
+    const names=Object.keys(files).sort();
+    if(!names.length){const e=document.createElement('div');e.textContent='（未加载/无内容）';list.append(e)}
+    names.forEach(n=>{
+      const d=document.createElement('div'); d.textContent=n;
+      d.onclick=()=>{curFile={t,n};Array.from(box.querySelectorAll('.tfiles div')).forEach(x=>x.classList.remove('sel'));d.classList.add('sel');$('#content').textContent=files[n]||''};
+      list.append(d);
+    });
+    g.append(list); box.append(g);
   });
-  // SFL 三模式（前带启用勾选）
-  ['tun','ebpf','tproxy'].forEach(m=>{
-    const w=document.createElement('span'); w.className='mbtn';
-    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!modeState.enabled[m];
-    cb.title='启用/停用该模式（写入 homelab.yaml）';
-    cb.onchange=async()=>{
-      try{
-        const r=await api('/api/modes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m,enabled:cb.checked})});
-        const j=await r.json().catch(()=>({}));
-        if(!r.ok){cb.checked=!cb.checked; throw new Error(j.error||r.status)}
-        log('模式 '+m+(cb.checked?' 已启用':' 已停用'),'ok'); await loadModes();
-        if(cur.target==='SFL'&&cur.mode===m&&!cb.checked){$('#content').textContent='（该模式已停用）';files={};renderFiles()}
-      }catch(e){log(String(e.message||e),'err')}
-    };
-    const b=document.createElement('button'); b.className='mini'+(cur.target==='SFL'&&cur.mode===m?' on':'');
-    b.textContent='SFL:'+m; b.onclick=()=>loadTarget('SFL',m);
-    w.append(cb,b); bar.append(w);
-  });
-  const sel=document.createElement('select');
-  ['tun','ebpf','tproxy'].forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent='默认: '+m;sel.append(o)});
-  sel.value=modeState.default_mode||'tun';
-  sel.onchange=async()=>{
-    try{
-      const r=await api('/api/modes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({default_mode:sel.value})});
-      const j=await r.json().catch(()=>({}));
-      if(!r.ok)throw new Error(j.error||r.status);
-      log('默认模式 → '+sel.value,'ok'); await loadModes();
-    }catch(e){log(String(e.message||e),'err')}
-  };
-  sel.title='推送默认模式';
-  bar.append(sel);
 }
-function renderPushSelect(){
-  const pm=$('#pushMode'); pm.innerHTML='';
-  const en=['tun','ebpf','tproxy'].filter(m=>modeState.enabled[m]);
-  (en.length?en:['tun','ebpf','tproxy']).forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent='推送: '+m;pm.append(o)});
-  pm.value=(en.includes(modeState.default_mode)?modeState.default_mode:en[0])||'tun';
-}
-
-/* ---------- 按需加载预览 ---------- */
-async function loadTarget(target,mode){
-  cur={target,mode};
-  setStatus('生成中…','warn');
-  const q=target==='SFL'?('?target=SFL&mode='+encodeURIComponent(mode)):('?target='+encodeURIComponent(target));
+async function loadTarget(t){
+  const q=t==='SFL'?('?target=SFL&mode='+encodeURIComponent(state.SFL.mode)):('?target='+t);
   try{
     const r=await api('/api/preview'+q);
     const j=await r.json();
-    if(!r.ok){files={};renderFiles();$('#content').textContent='';setStatus('生成失败','err');log('生成失败: '+(j.error||r.status),'err');renderModebar();return}
-    files=j.files||{};
-    renderFiles();
-    const first=Object.keys(files).sort()[0]; if(first)selectFile(first);
-    setStatus('已加载 '+(j.label||target)+'（'+Object.keys(files).length+' 个文件）','ok');
-    log('已加载 '+(j.label||target),'ok'); renderModebar();
-  }catch(e){setStatus('生成失败','err');log(e.message||String(e),'err')}
+    if(!r.ok){state[t].files={};renderGroups();setStatus(t+' 生成失败','err');log(t+' 生成失败: '+(j.error||r.status),'err');return}
+    state[t].files=j.files||{};
+    renderGroups();
+    if(curFile.t===t&&state[t].files[curFile.n])$('#content').textContent=state[t].files[curFile.n];
+    setStatus('已加载 '+t+(t==='SFL'?'/'+state.SFL.mode:'')+'（'+Object.keys(state[t].files).length+' 个文件）','ok');
+  }catch(e){setStatus(t+' 生成失败','err');log(t+' 失败: '+(e.message||e),'err')}
 }
-window.sgenRefreshPreview=()=>{ if(cur.target) loadTarget(cur.target,cur.mode) };
-function renderFiles(){
-  const box=$('#files'); box.innerHTML='';
-  Object.keys(files).sort().forEach(n=>{
-    const d=document.createElement('div'); d.textContent=n;
-    d.onclick=()=>selectFile(n);
-    box.append(d);
+function loadAll(){TARGETS.forEach(loadTarget)}
+window.sgenRefreshPreview=loadAll;
+
+/* ---------- 右上：模块勾选 ---------- */
+async function loadModes(){
+  try{const r=await api('/api/modes');modeState=await r.json();renderPushSelect();renderGroups()}catch(e){log('模式状态加载失败: '+(e.message||e),'err')}
+}
+async function loadModules(){
+  try{
+    const r=await api('/api/modules'); const j=await r.json();
+    if(!r.ok)throw new Error(j.error||r.status);
+    modData=j;
+    const sel=$('#modTarget'); const keep=sel.value||'SFL'; sel.innerHTML='';
+    TARGETS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent='目标: '+t;sel.append(o)});
+    sel.value=keep; sel.onchange=renderModules;
+    renderModules();
+  }catch(e){log('模块列表加载失败: '+(e.message||e),'err')}
+}
+function renderModules(){
+  const t=$('#modTarget').value||'SFL';
+  const list=(modData.targets||{})[t]||[];
+  const box=$('#mods'); box.innerHTML='';
+  list.forEach((mi,idx)=>{
+    const row=document.createElement('div'); row.className='mrow';
+    row.draggable=true;
+    row.ondragstart=()=>{row.classList.add('drag');window.__modDrag=mi.name};
+    row.ondragend=()=>row.classList.remove('drag');
+    row.ondragover=(e)=>e.preventDefault();
+    row.ondrop=async(e)=>{
+      e.preventDefault();
+      const from=(modData.order||[]).indexOf(window.__modDrag), to=(modData.order||[]).indexOf(mi.name);
+      if(from<0||to<0||from===to)return;
+      const o=(modData.order||[]).slice(); const[x]=o.splice(from,1); o.splice(to,0,x);
+      try{
+        const r=await api('/api/modules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({order:o})});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok)throw new Error(j.error||r.status);
+        log('模块顺序已保存: '+o.join(' > '),'ok'); await loadModules(); loadAll();
+      }catch(err){log('排序保存失败: '+(err.message||err),'err')}
+    };
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=mi.enabled;
+    if(!mi.has_content){cb.disabled=true;cb.title='该模块无内容：需在 YAML 的 extra.'+t+'.'+mi.name+' 提供'}
+    cb.onchange=async()=>{
+      try{
+        const r=await api('/api/modules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:t,module:mi.name,enabled:cb.checked})});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok)throw new Error(j.error||r.status);
+        log(t+' 模块 '+mi.name+(cb.checked?' 已启用':' 已停用'),'ok');
+        await loadModules(); await loadTarget(t);
+      }catch(e){cb.checked=!cb.checked;log('模块切换失败: '+(e.message||e),'err')}
+    };
+    const n=document.createElement('span'); n.className='n'; n.textContent=mi.name;
+    const tag=document.createElement('span'); tag.className='tag';
+    tag.textContent=mi.builtin?'内置':(mi.has_content?'extra':'无内容');
+    const ed=document.createElement('button'); ed.className='mini'; ed.textContent='编辑';
+    ed.disabled=mi.builtin;
+    if(mi.builtin)ed.title='内置模块内容来自 YAML 结构化字段';
+    ed.onclick=()=>openExtra(mi.name);
+    row.append(cb,n,tag,ed); box.append(row);
   });
 }
-function selectFile(n){
-  const box=$('#files');
-  Array.from(box.children).forEach(c=>c.classList.toggle('sel',c.textContent===n));
-  $('#content').textContent=files[n]||'';
+function renderPushSelect(){
+  const pm=$('#pushMode'); pm.innerHTML='';
+  const en=MODES.filter(m=>modeState.enabled[m]);
+  (en.length?en:MODES).forEach(m=>{const o=document.createElement('option');o.value=m;o.textContent='推送: '+m;pm.append(o)});
+  pm.value=en.includes(modeState.default_mode)?modeState.default_mode:(en[0]||'tun');
+}
+
+/* ---------- extra 模块 表单编辑器 ---------- */
+let extra={target:'',module:'',content:null,open:false};
+const ARRAY_MODULES=['endpoints','certificate_providers','network_namespaces'];
+const KEYHINTS={
+  ntp:['enabled','server','server_port','interval','detour','domain_resolver','write_to_system'],
+  certificate:['store','store_path','certificate','certificate_path','certificate_public_key_sha256'],
+  certificate_providers:['type','tag','domain','email','provider','api_token','profile','cache_path'],
+  network_namespaces:['type','tag','name','path','include_path','exclude_path'],
+  endpoints:['type','tag','system','name','mtu','address','private_key','listen_port','peers','detour']
+};
+function parseVal(v){try{return JSON.parse(v)}catch(e){return v}}
+function openExtra(module){
+  const t=$('#modTarget').value||'SFL';
+  extra={target:t,module:module,content:null,open:true};
+  api('/api/extra?target='+encodeURIComponent(t)+'&module='+encodeURIComponent(module))
+    .then(r=>r.json().then(j=>({ok:r.ok,j})))
+    .then(({ok,j})=>{
+      if(!ok)throw new Error(j.error||'读取失败');
+      extra.content = j.has ? j.content : (ARRAY_MODULES.includes(module)?[]:{});
+      renderExtra();
+    })
+    .catch(e=>{log('读取 extra 失败: '+(e.message||e),'err'); renderExtra()});
+}
+function closeExtra(){extra.open=false;renderExtra()}
+function renderExtra(){
+  const box=$('#extraRoot'); box.innerHTML='';
+  if(!extra.open)return;
+  const card=document.createElement('div'); card.className='rcard';
+  const isArr=Array.isArray(extra.content);
+  const h=document.createElement('h4');
+  h.textContent='extra.'+extra.target+'.'+extra.module+(isArr?'（数组，可拖动排序）':'（对象）');
+  card.append(h);
+  const dl=document.createElement('datalist'); dl.id='kh_'+extra.module;
+  (KEYHINTS[extra.module]||[]).forEach(k=>{const o=document.createElement('option');o.value=k;dl.append(o)});
+  card.append(dl);
+  const wrap=document.createElement('div');
+  card.append(wrap);
+  if(isArr){
+    extra.content.forEach((it,i)=>{
+      if(typeof it!=='object'||it===null||Array.isArray(it)){extra.content[i]=parseVal(String(it))}
+      const item=document.createElement('div'); item.className='item'; item.draggable=true;
+      let dragFrom=null;
+      item.ondragstart=()=>{dragFrom=i};
+      item.ondragover=(e)=>e.preventDefault();
+      item.ondrop=()=>{ if(dragFrom===null||dragFrom===i)return; const[x]=extra.content.splice(dragFrom,1); extra.content.splice(i,0,x); renderExtra() };
+      const ih=document.createElement('div'); ih.className='itemh';
+      ih.append(document.createTextNode('#'+(i+1)));
+      const up=document.createElement('button'); up.className='mini'; up.textContent='↑';
+      up.onclick=()=>{if(i>0){const[x]=extra.content.splice(i,1);extra.content.splice(i-1,0,x);renderExtra()}};
+      const dn=document.createElement('button'); dn.className='mini'; dn.textContent='↓';
+      dn.onclick=()=>{if(i<extra.content.length-1){const[x]=extra.content.splice(i,1);extra.content.splice(i+1,0,x);renderExtra()}};
+      const cp=document.createElement('button'); cp.className='mini'; cp.textContent='复制';
+      cp.onclick=()=>{extra.content.splice(i+1,0,JSON.parse(JSON.stringify(extra.content[i])));renderExtra()};
+      const rm=document.createElement('button'); rm.className='mini'; rm.textContent='删除';
+      rm.onclick=()=>{extra.content.splice(i,1);renderExtra()};
+      ih.append(up,dn,cp,rm);
+      item.append(ih, kvEditor(extra.content[i], ()=>{}));
+      wrap.append(item);
+    });
+    const add=document.createElement('button'); add.className='mini'; add.textContent='+ 添加项';
+    add.onclick=()=>{extra.content.push({type:'',tag:''});renderExtra()};
+    wrap.append(add);
+  }else{
+    wrap.append(kvEditor(extra.content,()=>{}));
+  }
+  const adv=document.createElement('textarea'); adv.className='rjson'; adv.style.minHeight='120px';
+  adv.value=JSON.stringify(extra.content,null,2);
+  adv.onclick=()=>{adv.value=JSON.stringify(extra.content,null,2)};
+  adv.onchange=()=>{try{extra.content=JSON.parse(adv.value);renderExtra();log('已从 JSON 应用','ok')}catch(e){alert('JSON 无效: '+e.message)}};
+  const save=document.createElement('button'); save.textContent='保存';
+  save.onclick=async()=>{
+    try{
+      const r=await api('/api/extra',{method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({target:extra.target,module:extra.module,content:extra.content})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(j.error||r.status);
+      log('已保存 extra.'+extra.target+'.'+extra.module+'（并启用该模块）','ok');
+      await loadModules(); loadTarget(extra.target);
+    }catch(e){log('保存失败: '+(e.message||e),'err')}
+  };
+  const cancel=document.createElement('button'); cancel.className='mini'; cancel.textContent='收起';
+  cancel.onclick=closeExtra;
+  const bar=document.createElement('div'); bar.className='rbar'; bar.append(save,cancel);
+  card.append(adv,bar);
+  box.append(card);
+}
+function kvEditor(obj,onchange){
+  const wrap=document.createElement('div');
+  function draw(){
+    wrap.innerHTML='';
+    Object.keys(obj).forEach(k=>{
+      const row=document.createElement('div'); row.className='kvr';
+      const ki=document.createElement('input'); ki.value=k; ki.setAttribute('list','kh_'+extra.module);
+      ki.onchange=()=>{ if(ki.value===k||ki.value===''){ki.value=k;return} const v=obj[k]; delete obj[k]; obj[ki.value]=v; onchange(); draw() };
+      const vi=document.createElement('input');
+      vi.value=(typeof obj[k]==='string')?obj[k]:JSON.stringify(obj[k]);
+      vi.onchange=()=>{ obj[k]=parseVal(vi.value); onchange() };
+      const del=document.createElement('button'); del.className='mini'; del.textContent='×';
+      del.onclick=()=>{ delete obj[k]; onchange(); draw() };
+      row.append(ki,vi,del); wrap.append(row);
+    });
+    const add=document.createElement('button'); add.className='mini'; add.textContent='+ 字段';
+    add.onclick=()=>{ let n='new_key'; while(n in obj)n+='_'; obj[n]=''; onchange(); draw() };
+    wrap.append(add);
+  }
+  draw(); return wrap;
 }
 
 /* ---------- 下载 / 推送 ---------- */
-function dlSFL(){log('开始下载 SFL zip …');location.href='/download/SFL'}
+function dlSFL(){log('下载 SFL zip …');location.href='/download/SFL'}
 function dlPhone(t){
-  log('开始下载 '+t+' json …');
-  fetch('/download/'+t).then(r=>r.blob()).then(b=>{
-    const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='v1.14-mobile-'+t+'.json';a.click();
-  }).catch(e=>log('下载失败: '+(e.message||e),'err'));
+  log('下载 '+t+' …');
+  fetch('/download/'+t).then(r=>r.blob()).then(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='v1.14-mobile-'+t+'.json';a.click()}).catch(e=>log('下载失败: '+(e.message||e),'err'));
 }
 async function push(){
   const mode=$('#pushMode').value;
-  if(!mode){alert('请先加载一次预览以确定启用模式');return}
+  if(!mode){alert('请选择推送模式');return}
   const warn={tun:'需要 ip_forward；tun 由 sing-box 自管 nftables',
-              ebpf:'需要 reF1nd fork（with_ebpf）+ CAP_BPF，且无需 ip_forward',
-              tproxy:'需要 ip_forward + nftables.conf + singbox_tproxy.service（fwmark 策略路由）'}[mode]||'';
-  if(!confirm('推送到网关，模式：'+mode+'\n前置条件：'+warn+'\n\n流程：备份→check 门禁→应用→重启，失败自动回滚'))return;
+              ebpf:'需要 reF1nd fork（with_ebpf）+ CAP_BPF，无需 ip_forward',
+              tproxy:'需要 ip_forward + nftables.conf + singbox_tproxy.service'}[mode]||'';
+  if(!confirm('推送到网关，模式：'+mode+'\n前置条件：'+warn+'\n\n流程：备份→check 门禁→干净替换→重启，失败自动回滚'))return;
   setStatus('推送中…','warn');log('开始推送（模式 '+mode+'）…');
   try{
     const r=await api('/api/push',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});
-    const txt=await r.text();
-    txt.split('\n').forEach(l=>{if(l.trim())log(l)});
+    const txt=await r.text(); txt.split('\n').forEach(l=>{if(l.trim())log(l)});
     setStatus(txt.includes('完成')?'推送完成':'推送结束（见日志）',txt.includes('完成')?'ok':'err');
   }catch(e){setStatus('推送失败','err');log(e.message||String(e),'err')}
 }
 /* ---------- 启动 ---------- */
 fetch('/api/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{if(j.sample)$('#banner').style.display='block'}).catch(()=>{});
-loadModes();
+(async()=>{ await loadModes(); await loadModules(); loadAll(); })();
 </script>
 <script src="/ui_rules.js"></script>
 <script>if(window.rulesInit)rulesInit();</script>

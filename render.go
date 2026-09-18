@@ -31,6 +31,7 @@ type Ctx struct {
 	Inbounds       string
 	RouteExtra     string
 	ApiPort        int
+	Vars           map[string]any
 	DataDir        string
 }
 
@@ -103,6 +104,7 @@ func BuildCtx(c *Config, target, mode, dataDir string) (*Ctx, error) {
 		Inbounds:       inbounds,
 		RouteExtra:     routeExtra,
 		ApiPort:        c.SFL.Ports.API,
+		Vars:           vars,
 		DataDir:        dataDir,
 	}, nil
 }
@@ -364,16 +366,62 @@ func BuildOutbounds(c *Config, ctx *Ctx) (string, error) {
 
 // ---------- 渲染入口 ----------
 
-var gwSections = []struct{ tmpl, file string }{
-	{"b00", "00_log.json"}, {"b01", "01_experimental.json"}, {"b02", "02_dns.json"},
-	{"b03", "03_inbounds.json"}, {"OUTBOUNDS", "04_outbound.json"},
-	{"b05", "05_route.json"}, {"b06", "06_http_clients.json"}, {"b07", "07_services.json"},
+// 模块 -> SFL 产物文件名（前缀仅影响目录内可读性，sing-box 按 key 合并）
+var sflFileNames = map[string]string{
+	"log": "00_log.json", "experimental": "01_experimental.json", "dns": "02_dns.json",
+	"inbounds": "03_inbounds.json", "outbounds": "04_outbound.json", "route": "05_route.json",
+	"http_clients": "06_http_clients.json", "services": "07_services.json",
+	"ntp": "08_ntp.json", "certificate": "09_certificate.json",
+	"certificate_providers": "10_certificate_providers.json",
+	"network_namespaces": "11_network_namespaces.json", "endpoints": "12_endpoints.json",
+}
+
+// 非建模模块（extra 透传）的键序
+var moduleKeyOrder = []string{
+	"type", "tag", "enabled", "server", "server_port", "domain", "email",
+	"provider", "interface", "address", "listen", "listen_port", "peers", "private_key",
+	"public_key", "pre_shared_key", "allowed_ips", "mtu", "detour", "tls", "password", "username",
 }
 
 const marker = "// !! 本文件由 singbox-gen 生成（homelab.yaml -> 模板装配），勿手改 !!"
 
 func wrap(body string) string {
 	return "{\n  \"$schema\": \"https://sing-box.sagernet.org/schema.json\",\n  " + body + "\n}\n"
+}
+
+// renderModule 生成单个模块的正文（不含 {} 包裹）；模块未启用返回 ok=false
+func renderModule(c *Config, t *template.Template, ctx *Ctx, name string) (string, bool, error) {
+	if !c.ModuleEnabled(ctx.Target, name) {
+		return "", false, nil
+	}
+	switch name {
+	case "log":
+		b, err := execTmpl(t, "b00", ctx); return b, true, err
+	case "experimental":
+		b, err := execTmpl(t, "b01", ctx); return b, true, err
+	case "dns":
+		b, err := execTmpl(t, "b02", ctx); return b, true, err
+	case "inbounds":
+		b, err := execTmpl(t, "b03", ctx); return b, true, err
+	case "outbounds":
+		b, err := BuildOutbounds(c, ctx); return b, true, err
+	case "route":
+		b, err := execTmpl(t, "b05", ctx); return b, true, err
+	case "http_clients":
+		b, err := execTmpl(t, "b06", ctx); return b, true, err
+	case "services":
+		if ctx.Target != TgtSFL {
+			return "", false, fmt.Errorf("模块 services 不适用于 %s", ctx.Target)
+		}
+		b, err := execTmpl(t, "b07", ctx); return b, true, err
+	}
+	// 非建模模块：extra 原样透传
+	v, ok := c.ExtraOf(ctx.Target, name)
+	if !ok {
+		return "", false, fmt.Errorf("模块 %s 已启用但无内容：请在 YAML 写入 extra.%s.%s", name, ctx.Target, name)
+	}
+	body := renderVal(substAny(v, ctx.Vars, nil), 2, moduleKeyOrder, ctx.Vars, nil)
+	return `"` + name + `": ` + body, true, nil
 }
 
 // RenderSFL 生成 SFL 某一模式的产物（conf 目录内容）
@@ -387,17 +435,19 @@ func RenderSFL(c *Config, mode, dataDir string) (map[string]string, error) {
 		return nil, err
 	}
 	files := map[string]string{}
-	for _, s := range gwSections {
-		var body string
-		if s.tmpl == "OUTBOUNDS" {
-			body, err = BuildOutbounds(c, ctx)
-		} else {
-			body, err = execTmpl(t, s.tmpl, ctx)
-		}
+	for _, name := range c.OrderedModules() {
+		body, ok, err := renderModule(c, t, ctx, name)
 		if err != nil {
 			return nil, err
 		}
-		files[s.file] = marker + "\n" + wrap(body)
+		if !ok {
+			continue
+		}
+		file, has := sflFileNames[name]
+		if !has {
+			file = "99_" + name + ".json"
+		}
+		files[file] = marker + "\n" + wrap(body)
 	}
 	svc, err := templatesFS.ReadFile("templates/systemd-unit.txt")
 	if err != nil {
@@ -431,18 +481,14 @@ func RenderPhone(c *Config, target, dataDir string) (string, error) {
 		return "", err
 	}
 	var bodies []string
-	order := []string{"b00", "b02", "b06", "b03", "OUTBOUNDS", "b05", "b01"}
-	for _, name := range order {
-		var body string
-		if name == "OUTBOUNDS" {
-			body, err = BuildOutbounds(c, ctx)
-		} else {
-			body, err = execTmpl(t, name, ctx)
-		}
+	for _, name := range c.OrderedModules() {
+		body, ok, err := renderModule(c, t, ctx, name)
 		if err != nil {
 			return "", err
 		}
-		bodies = append(bodies, body)
+		if ok {
+			bodies = append(bodies, body)
+		}
 	}
 	hb, err := templatesFS.ReadFile("templates/phone-header.txt")
 	if err != nil {

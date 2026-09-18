@@ -111,32 +111,27 @@ templates/systemd-unit.txt       systemd 单元
 ui.html                          内置 Web UI
 ```
 
-## Web UI（左右双栏，按需加载）
+## Web UI（左右双栏）
 
 ```
-产物预览（左）                                  │ 规则编辑（右）
-[SFA][SFI]  [☑SFL:tun][☑SFL:ebpf][☑SFL:tproxy]  │ rule_sets / DNS 规则 / Route 规则
-文件树 + 内容                                    │ 拖动排序、向导添加、保存
+产物预览（左，默认全显 SFA / SFI / SFL）            │ 配置模块（右）
+SFA            [下载][刷新]                        │ [目标: SFL ▾]  ☑ log  ☑ dns  ☐ ntp …
+SFI            [下载][刷新]                        │  勾选=同步到左侧产物（写字 fallback homelab.yaml）
+SFL  [tun ▾]   [下载][刷新]                        │ ─────────────
+  └ 00_log.json …（点文件看内容）                   │ 规则编辑（rule_sets / DNS / Route，拖动排序）
 ```
 
-- **按需生成**：点哪个按钮只渲染那一个（`SFA` / `SFI` / `SFL:tun|ebpf|tproxy`），不再一次性列出全部
-- 模式前的勾选框 = 启用/停用（定点写入 `homelab.yaml` 的 `SFL.modes.<mode>.enabled`，无需重启）
-- 右上 `默认: xxx` 下拉 = `SFL.default_mode`；推送按钮旁的下拉选择推送哪个模式
-- 规则编辑保存后**自动刷新左侧当前预览**
-- 界面不再提供 YAML 文本编辑区：**非规则部分**（节点/端口/模式入参/ECS 等）直接编辑部署目录的
-  `data/homelab.yaml`，然后在界面点一次按钮即可生效（配置每次请求实时读取，无需重启）
-
-### 模式与端口
-
-- 勾选框对应 YAML 的 `SFL.modes.<mode>.enabled`；勾选即改写左侧 YAML 文本（点"保存 YAML"生效）
-- 端口统一在 `SFL.ports`（mixed / socks / fake_in / api / redirect / tproxy），生成前校验范围与重复
-- 各模式前置条件（推送时弹窗提示）：
-
-| 模式 | 前置条件 |
-|---|---|
-| tun | `net.ipv4.ip_forward=1`；nftables 由 sing-box（auto_redirect）自管 |
-| ebpf | **reF1nd fork**（`with_ebpf`）+ `CAP_BPF`；TC 挂下游接口，**不需要 ip_forward** |
-| tproxy | `ip_forward=1`；宿主侧需 `nftables.conf` + `singbox_tproxy.service`（fwmark 策略路由）——本项目**不生成**这两个高危物件 |
+- **按需生成**：每个目标端各自加载（SFL 可切换 tun / ebpf / tproxy），不再一次性渲染全部
+- **模块勾选**：右侧列出 sing-box 全部顶层模块
+  `log / dns / ntp / certificate / certificate_providers / http_clients / network_namespaces / endpoints / inbounds / outbounds / route / services / experimental`
+  勾选即写入 `modules.<目标>.<模块>`，并自动刷新左侧该目标产物
+- **内置模块**（log/dns/http_clients/inbounds/outbounds/route/services/experimental）内容来自 YAML 结构化字段；
+  **非内置模块**需在 YAML 写 `extra.<目标>.<模块>`，生成器原样透传（值支持 `{{proxy_dns}}` 等变量）
+- **模块拖动排序**：拖动右侧模块行即改输出顺序（写入 `module_order`），保存后自动刷新左侧
+- **表单式编辑（extra 模块）**：`ntp / certificate / certificate_providers / network_namespaces / endpoints`
+  点行尾「编辑」→ 键值表单（键有候选提示）+ 数组项拖动排序/复制/删除 + 高级 JSON 文本区；
+  保存后自动启用该模块并刷新左侧
+- 规则编辑保存后自动刷新左侧
 
 ### 规则编辑页（方案 B：同屏三栏 + 行级联动）
 

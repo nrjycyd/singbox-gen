@@ -121,8 +121,8 @@ func (p *Pusher) Deploy(files map[string]string) error {
 	}
 	logf("      备份于 " + bk)
 
-	logf("[5/6] 应用新配置")
-	if _, err := p.run(c, "cp -a "+tmp+"/. "+conf+"/ && rm -rf "+tmp); err != nil {
+	logf("[5/6] 应用新配置（干净替换：清空旧文件后写入）")
+	if _, err := p.run(c, "set -e; rm -rf "+conf+".new && mkdir -p "+conf+".new && cp -a "+tmp+"/. "+conf+".new/ && rm -rf "+conf+" && mv "+conf+".new "+conf+" && rm -rf "+tmp); err != nil {
 		return fmt.Errorf("应用失败（配置未变）: %w", err)
 	}
 

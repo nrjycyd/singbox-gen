@@ -204,3 +204,218 @@ func (s *Server) apiModes(w http.ResponseWriter, r *http.Request) {
 		errOut(w, 405, "method")
 	}
 }
+
+// ensureMap：取得（必要时创建）嵌套映射节点
+func ensureMap(m *yaml.Node, key string) *yaml.Node {
+	if v := findValue(m, key); v != nil {
+		if v.Kind == yaml.MappingNode {
+			return v
+		}
+		return nil
+	}
+	n := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, n)
+	return n
+}
+
+// ModuleInfo：模块状态（供 UI 渲染勾选框）
+type ModuleInfo struct {
+	Name       string `json:"name"`
+	Enabled    bool   `json:"enabled"`
+	Builtin    bool   `json:"builtin"`
+	HasContent bool   `json:"has_content"`
+}
+
+// apiModules：GET 列出各目标端模块状态；PUT {target,module,enabled} 定点写回
+func (s *Server) apiModules(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		c, err := s.loadCfg()
+		if err != nil {
+			errOut(w, 500, fmt.Sprintf("配置加载失败（%s/homelab.yaml）: %v", s.dataDir, err))
+			return
+		}
+		targets := map[string][]ModuleInfo{}
+		for _, t := range AllTargets {
+			list := make([]ModuleInfo, 0, len(AllModules))
+			for _, m := range AllModules {
+				_, hasExtra := c.ExtraOf(t, m)
+				list = append(list, ModuleInfo{
+					Name:       m,
+					Enabled:    c.ModuleEnabled(t, m),
+					Builtin:    builtinModules[m],
+					HasContent: builtinModules[m] || hasExtra,
+				})
+			}
+			targets[t] = list
+		}
+		jsonOut(w, map[string]any{"targets": targets, "all": AllModules, "order": c.OrderedModules()})
+	case http.MethodPut:
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		var req struct {
+			Target  string   `json:"target"`
+			Module  string   `json:"module"`
+			Enabled *bool    `json:"enabled"`
+			Order   []string `json:"order"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			errOut(w, 400, "JSON 解析失败: "+err.Error())
+			return
+		}
+		if len(req.Order) > 0 {
+			valid := map[string]bool{}
+			for _, m := range AllModules {
+				valid[m] = true
+			}
+			for _, m := range req.Order {
+				if !valid[m] {
+					errOut(w, 400, "order 含未知模块: "+m)
+					return
+				}
+			}
+			if err := s.mutateConfig(func(root *yaml.Node) error {
+				return setValue(root, "module_order", req.Order)
+			}); err != nil {
+				errOut(w, 400, err.Error())
+				return
+			}
+			jsonOut(w, map[string]bool{"ok": true})
+			return
+		}
+		known := false
+		for _, m := range AllModules {
+			if m == req.Module {
+				known = true
+			}
+		}
+		if !known || req.Enabled == nil {
+			errOut(w, 400, "需要 target + 合法 module + enabled")
+			return
+		}
+		valid := false
+		for _, t := range AllTargets {
+			if t == req.Target {
+				valid = true
+			}
+		}
+		if !valid {
+			errOut(w, 400, "target 需要 SFL/SFA/SFI")
+			return
+		}
+		err = s.mutateConfig(func(root *yaml.Node) error {
+			mods := ensureMap(root, "modules")
+			if mods == nil {
+				return fmt.Errorf("modules 不是映射")
+			}
+			tm := ensureMap(mods, req.Target)
+			if tm == nil {
+				return fmt.Errorf("modules.%s 不是映射", req.Target)
+			}
+			return setValue(tm, req.Module, *req.Enabled)
+		})
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		jsonOut(w, map[string]bool{"ok": true})
+	default:
+		errOut(w, 405, "method")
+	}
+}
+
+// apiExtra：读取/写入非建模模块的原样内容（extra.<target>.<module>）
+func (s *Server) apiExtra(w http.ResponseWriter, r *http.Request) {
+	c, err := s.loadCfg()
+	if err != nil {
+		errOut(w, 500, fmt.Sprintf("配置加载失败（%s/homelab.yaml）: %v", s.dataDir, err))
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		target := r.URL.Query().Get("target")
+		module := r.URL.Query().Get("module")
+		known := false
+		for _, m := range AllModules {
+			if m == module {
+				known = true
+			}
+		}
+		if !known {
+			errOut(w, 400, "未知模块: "+module)
+			return
+		}
+		content, has := c.ExtraOf(target, module)
+		jsonOut(w, map[string]any{"target": target, "module": module, "content": content, "has": has, "builtin": builtinModules[module]})
+	case http.MethodPut:
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		var req struct {
+			Target  string `json:"target"`
+			Module  string `json:"module"`
+			Content any    `json:"content"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			errOut(w, 400, "JSON 解析失败: "+err.Error())
+			return
+		}
+		known := false
+		for _, m := range AllModules {
+			if m == req.Module {
+				known = true
+			}
+		}
+		okTarget := false
+		for _, t := range AllTargets {
+			if t == req.Target {
+				okTarget = true
+			}
+		}
+		if !known || !okTarget {
+			errOut(w, 400, "需要合法 target + module")
+			return
+		}
+		if builtinModules[req.Module] {
+			errOut(w, 400, "模块 "+req.Module+" 为内置模块，内容由 YAML 结构化字段生成（不支持 extra 编辑）")
+			return
+		}
+		if req.Content == nil {
+			errOut(w, 400, "content 不能为空")
+			return
+		}
+		err = s.mutateConfig(func(root *yaml.Node) error {
+			ext := ensureMap(root, "extra")
+			if ext == nil {
+				return fmt.Errorf("extra 不是映射")
+			}
+			tm := ensureMap(ext, req.Target)
+			if tm == nil {
+				return fmt.Errorf("extra.%s 不是映射", req.Target)
+			}
+			if err := setValue(tm, req.Module, req.Content); err != nil {
+				return err
+			}
+			// 顺带启用该模块，勾选即生效
+			mods := ensureMap(root, "modules")
+			if mods != nil {
+				if tm2 := ensureMap(mods, req.Target); tm2 != nil {
+					return setValue(tm2, req.Module, true)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			errOut(w, 400, err.Error())
+			return
+		}
+		jsonOut(w, map[string]bool{"ok": true})
+	default:
+		errOut(w, 405, "method")
+	}
+}

@@ -43,6 +43,7 @@ jobs:
           curl -fsS http://127.0.0.1:18090/api/status; echo
           curl -fsS "http://127.0.0.1:18090/api/preview?target=SFL&mode=ebpf" | head -c 200; echo
           curl -fsS http://127.0.0.1:18090/api/modes; echo
+          curl -fsS http://127.0.0.1:18090/api/modules | head -c 200; echo
           # 规则保存链路：GET → PUT 原样回写 → 再 GET 必须一致（覆盖 yaml.Node 定点替换）
           curl -fsS http://127.0.0.1:18090/api/rules -o /tmp/rules1.json
           curl -fsS -X PUT http://127.0.0.1:18090/api/rules \
