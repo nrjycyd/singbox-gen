@@ -26,7 +26,7 @@ cp <真实>/certs/*.crt   data/certs/
 cp <SSH私钥>            data/keys/id_ed25519
 docker compose restart
 
-# 方式二：打开 UI 直接改 YAML → 保存（token 见 secret.ui_token，示例为 demo-ui）
+# 方式二：打开 UI 直接改 YAML → 保存
 ```
 
 > ⚠️ 真实配置缺失的证书**不会**被自动生成（否则会掩盖错误、导致 TLS 校验失败）——
@@ -56,12 +56,12 @@ docker compose restart
    > 先把 compose `image:` 改成你的 GHCR 路径（必须全小写）。
    > DSM Container Manager「项目」方式部署时，`./data` 按 DSM 选定的项目目录解析；
    > 若怀疑解析错位，把 volume 改成绝对路径 `- /<绝对路径>/data:/data`。
-4. 浏览器打开 `http://<部署机IP>:8090`，右上角输入 `secret.ui_token` 即可使用
+4. 浏览器打开 `http://<部署机IP>:8090` 直接使用（**无鉴权**）
 
-   > **鉴权模型**：`secret.ui_token` **留空 = 内网免鉴权**（示例配置默认如此，UI 会自动隐藏 token 输入框）；
-   > 填入任意字符串则 `/api/*` 与下载接口需 `X-Token`。手机订阅 URL 由 `secret.profile_token` 独立保护。
-   > 忘记 token 时：直接编辑部署目录的 `data/homelab.yaml` 清空该字段（配置实时读取，无需重启），
-   > 或查看该文件里的现值登录后在 UI 内改。
+   > ⚠️ 本工具不含鉴权：任何能访问该端口的内网设备都能改配置、下载产物、
+   > 触发"推送到网关"（等价于登录网关执行 systemd 操作）。**只部署在可信内网**；
+   > 如需暴露到公网或不可信网络，请自行在反向代理层加认证。
+   > 手机订阅 URL 由 `secret.profile_token` 作为路径凭证（可改任意字符串）。
 
 ## 手机订阅
 

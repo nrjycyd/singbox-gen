@@ -25,13 +25,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("配置加载失败: %v", err)
 	}
-	if c.Secret.UIToken == "" {
-		log.Println("警告: secret.ui_token 为空，API 将拒绝所有请求，请在 homelab.yaml 设置 token")
-	}
+	log.Printf("配置：%s/homelab.yaml（节点 %d / 规则集 %d / DNS 规则 %d / Route 规则 %d）",
+		*data, len(c.Nodes), len(c.RuleSets), len(c.DnsRules), len(c.RouteRules))
 
 	srv := &Server{dataDir: *data}
 	mux := http.NewServeMux()
 	srv.HandleRoutes(mux)
-	log.Printf("singbox-gen listening on %s, data=%s", *addr, *data)
-	log.Fatal(http.ListenAndServe(*addr, srv.Middleware(mux)))
+	log.Printf("singbox-gen listening on %s, data=%s（无鉴权，仅限内网使用）", *addr, *data)
+	log.Fatal(http.ListenAndServe(*addr, mux))
 }

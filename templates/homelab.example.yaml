@@ -1,7 +1,6 @@
 # CI 冒烟用脱敏配置（非真实值）。NAS 上实际配置放 data/homelab.yaml（不进 git）
 secret:
-  ui_token: ""                         # 留空 = 内网免鉴权（推荐）；填入字符串则 API/下载需 X-Token
-  profile_token: "demo-profile"        # 手机订阅 URL 的路径 token（/p/<此值>/mobile.json）
+  profile_token: "demo-profile"        # 手机订阅 URL 的路径凭证（/p/<此值>/mobile.json）
 
 ecs: "203.0.113.0/24"
 rule_dir: /usr/local/etc/sing-box/rules

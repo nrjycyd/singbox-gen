@@ -152,8 +152,7 @@ var knownFlags = map[string]bool{
 
 type Config struct {
 	Secret struct {
-		UIToken      string `yaml:"ui_token"`
-		ProfileToken string `yaml:"profile_token"`
+		ProfileToken string `yaml:"profile_token"` // 手机订阅 URL 的路径凭证（/p/<此值>/mobile.json）
 	} `yaml:"secret"`
 	Ecs       string            `yaml:"ecs"`
 	RuleDir   string            `yaml:"rule_dir"` // 网关 .srs 根目录

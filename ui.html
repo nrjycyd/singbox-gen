@@ -8,8 +8,7 @@
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 ui-monospace,Consolas,monospace;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;height:100vh}
 header{padding:10px 16px;background:var(--panel);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 header b{font-size:15px}
-input[type=password],input[type=text],input:not([type]){background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:4px 8px}
-input.bad{border-color:var(--err)}
+input:not([type]){background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radius:4px;padding:4px 8px}
 button{background:var(--acc);color:#0b0d10;border:0;border-radius:4px;padding:6px 14px;font:inherit;cursor:pointer}
 button.alt{background:#2c313a;color:var(--fg)}
 button.mini{background:#2c313a;color:var(--fg);padding:2px 8px;font-size:12px}
@@ -39,7 +38,6 @@ textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radi
 .rsum{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rjson{width:100%;min-height:220px}
 .rf{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--mut)}
-.rf>span{color:var(--mut)}
 .rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .rtabs{display:flex;gap:6px}
 .rbar{margin-top:4px}
@@ -65,13 +63,12 @@ textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radi
 <body>
 <header>
   <b>singbox-gen</b>
-  <input id="token" type="password" placeholder="UI token（留空则免鉴权）">
   <button onclick="saveCfg()">保存 YAML</button>
   <button onclick="preview()">生成预览</button>
   <button class="alt" onclick="dl('gateway')">下载 网关 zip</button>
   <button class="alt" onclick="dl('phone')">下载 手机 zip</button>
   <button class="alt" onclick="push()">推送到网关(check 门禁)</button>
-  <span id="status">未连接</span>
+  <span id="status">连接中…</span>
 </header>
 <div id="banner" style="display:none;background:#5a3a12;color:#ffd9a0;padding:6px 16px;font-size:13px">
   当前使用<strong>自动生成的示例配置</strong>（节点为占位值，仅用于验证渲染与 UI）。
@@ -101,9 +98,6 @@ textarea{background:#12141a;color:var(--fg);border:1px solid #2c313a;border-radi
 const $=s=>document.querySelector(s);
 window.$=$;
 let files={};
-let noAuth=false;
-function tok(){return $('#token').value.trim()}
-window.sgenTok=tok;
 function setStatus(t,cls){const e=$('#status');e.textContent=t||'';e.className=cls||''}
 function log(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent='['+new Date().toLocaleTimeString()+'] '+t;$('#log').append(d);$('#log').scrollTop=1e9}
 window.sgenStatus=setStatus;window.sgenLog=log;
@@ -115,34 +109,28 @@ function switchTab(v){
   if(!p&&window.rulesInit)window.rulesInit();
 }
 window.switchTab=switchTab;
-function noTok(){if(noAuth||tok())return false;setStatus('请先填写 UI token','warn');$('#token').classList.add('bad');$('#token').focus();log('未填写 token：见部署目录 data/homelab.yaml 的 secret.ui_token（留空则免鉴权）','warn');return true}
 async function api(path,opts){
-  opts=opts||{};opts.cache='no-store';opts.headers=Object.assign({'X-Token':tok()},opts.headers||{});
-  const r=await fetch(path,opts);
-  if(r.status===401){setStatus('token 不正确','err');$('#token').classList.add('bad');throw new Error('token 不正确（data/homelab.yaml → secret.ui_token；留空可关闭鉴权）')}
-  return r;
+  opts=opts||{};opts.cache='no-store';
+  return fetch(path,opts);
 }
 async function loadCfg(){
-  if(noTok())return;
   try{
     const r=await api('/api/config');
+    if(!r.ok)throw new Error('加载失败: '+r.status);
     $('#yaml').value=await r.text();
-    $('#token').classList.remove('bad');
-    if(!noAuth)setStatus('已连接','ok');
-  }catch(e){log(e.message||String(e),'err')}
+    setStatus('已连接','ok');
+  }catch(e){setStatus('未连接','err');log(e.message||String(e),'err')}
 }
 window.sgenReloadYaml=loadCfg;
 async function saveCfg(){
-  if(noTok())return;
   try{
     const r=await api('/api/config',{method:'POST',body:$('#yaml').value});
     const j=await r.json().catch(()=>({}));
-    if(r.ok){setStatus('已保存','ok');log('保存成功（写入 /data/homelab.yaml）','ok')}
+    if(r.ok){setStatus('已保存','ok');log('保存成功（写入 homelab.yaml）','ok')}
     else{setStatus('保存失败','err');log('保存失败: '+(j.error||r.status),'err')}
-  }catch(e){log(e.message||String(e),'err')}
+  }catch(e){setStatus('保存失败','err');log(e.message||String(e),'err')}
 }
 async function preview(){
-  if(noTok())return;
   setStatus('生成中…','warn');
   try{
     const r=await api('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({yaml:$('#yaml').value})});
@@ -158,12 +146,10 @@ async function preview(){
   }catch(e){setStatus('生成失败','err');log(e.message||String(e),'err')}
 }
 function dl(which){
-  if(noTok())return;
   log('开始下载 '+which+' …');
-  location.href='/download/'+which+'?token='+encodeURIComponent(tok());
+  location.href='/download/'+which;
 }
 async function push(){
-  if(noTok())return;
   if(!confirm('推送到网关（备份→check→应用→重启，失败自动回滚）？'))return;
   setStatus('推送中…','warn');log('开始推送…');
   try{
@@ -173,23 +159,7 @@ async function push(){
     setStatus(txt.includes('完成')?'推送完成':'推送结束（见日志）',txt.includes('完成')?'ok':'err');
   }catch(e){setStatus('推送失败','err');log(e.message||String(e),'err')}
 }
-$('#token').value=localStorage.getItem('singbox-gen_token')||'';
-let t=null;
-$('#token').addEventListener('input',()=>{
-  localStorage.setItem('singbox-gen_token',tok());
-  $('#token').classList.remove('bad');
-  clearTimeout(t);t=setTimeout(()=>{if(tok())loadCfg()},600);
-});
-$('#token').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(t);loadCfg()}});
-fetch('/api/status', { cache: 'no-store' }).then(r=>r.json()).then(j=>{
-  if(j.sample)$('#banner').style.display='block';
-  if(j.auth===false){
-    noAuth=true;$('#token').style.display='none';setStatus('内网免鉴权','ok');loadCfg();
-  }else{
-    noAuth=false;$('#token').style.display='';$('#token').placeholder='UI token（见 data/homelab.yaml → secret.ui_token）';
-    if(!tok())setStatus('需要 token','warn');
-  }
-}).catch(()=>{});
+fetch('/api/status',{cache:'no-store'}).then(r=>r.json()).then(j=>{if(j.sample)$('#banner').style.display='block'}).catch(()=>{});
 loadCfg();
 </script>
 <script src="/ui_rules.js"></script>
